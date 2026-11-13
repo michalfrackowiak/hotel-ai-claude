@@ -3,79 +3,175 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hotel AI - Voice Reception</title>
+  <title>{% if language == 'pl' %}Głosowa recepcja Hotel Aurora{% else %}Hotel Aurora · Voice Reception{% endif %}</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; text-align: center; }
-    #status { color: #555; margin: 1rem 0; }
-    button { font-size: 1rem; padding: .6rem 1.4rem; margin: .3rem; border: none; border-radius: 6px; cursor: pointer; }
-    button.primary { background: #1a73e8; color: #fff; }
-    button:disabled { background: #ccc; cursor: not-allowed; }
-    #transcript { white-space: pre-wrap; background: #f5f5f5; padding: 1rem; border-radius: 6px; min-height: 80px; }
-    audio { width: 100%; margin-top: 1rem; }
+    :root { --primary: #1a73e8; --bg: #f8f9fa; --surface: #fff; --text: #202124; --border: #dadce0; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .header { position: fixed; top: 0; left: 0; right: 0; background: var(--surface); border-bottom: 1px solid var(--border); padding: 1rem 1.5rem; display: flex; align-items: center; gap: 1rem; z-index: 100; }
+    .back-btn { text-decoration: none; color: var(--text-secondary); font-weight: 500; padding: 0.5rem 1rem; border: 1px solid var(--border); border-radius: 6px; }
+    .back-btn:hover { background: var(--bg); }
+    .logo { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; font-size: 1.1rem; }
+    .logo-icon { width: 32px; height: 32px; background: linear-gradient(135deg, var(--primary), #4285f4); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; }
+    .container { max-width: 600px; width: 100%; padding: 2rem; }
+    .card { background: var(--surface); border-radius: 16px; padding: 2rem; border: 1px solid var(--border); text-align: center; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .subtitle { color: var(--text-secondary); margin-bottom: 2rem; }
+    .mic-icon { width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #4285f4); display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem; font-size: 2rem; color: white; }
+    .controls { display: flex; gap: 1rem; justify-content: center; margin-bottom: 1.5rem; }
+    button { font-size: 1rem; padding: 0.75rem 1.5rem; border: none; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
+    button.primary { background: var(--primary); color: white; }
+    button.primary:hover { background: #1557b0; transform: translateY(-1px); }
+    button.danger { background: #ea4335; color: white; }
+    button.danger:hover { background: #c5221f; }
+    button:disabled { background: #dadce0; color: #9aa0a6; cursor: not-allowed; transform: none; }
+    #status { padding: 0.75rem 1rem; border-radius: 8px; margin-bottom: 1rem; font-weight: 500; }
+    #status.ready { background: #e6f4ea; color: #137333; }
+    #status.calling { background: #e8f0fe; color: #1967d2; }
+    #status.listening { background: #fce8e6; color: #c5221f; }
+    #status.processing { background: #fef7e0; color: #f9ab00; }
+    #status.error { background: #fce8e6; color: #c5221f; }
+    #transcript { white-space: pre-wrap; background: var(--bg); padding: 1rem; border-radius: 8px; min-height: 100px; text-align: left; font-size: 0.9rem; line-height: 1.6; }
+    .session-info { font-size: 0.75rem; color: var(--text-secondary); margin-top: 1rem; }
+    @media (max-width: 768px) { .container { padding: 1rem; } .card { padding: 1.5rem; } }
   </style>
 </head>
 <body>
-  <h1>Hotel AI - Voice Reception</h1>
-  <p>Language: <strong>{{ language }}</strong></p>
-  <div id="status">Ready.</div>
-  <button class="primary" id="callBtn">Start call</button>
-  <button id="stopBtn" disabled>Stop</button>
-  <div id="transcript"></div>
-  <audio id="outAudio" controls></audio>
+  <header class="header">
+    <a href="/?lang={{ language }}" class="back-btn">&larr; {% if language == 'pl' %}Powrót{% else %}Back{% endif %}</a>
+    <div class="logo"><div class="logo-icon">A</div> Hotel Aurora</div>
+    <a href="/chat/?lang={{ language }}" class="back-btn" style="margin-left:auto;">💬 {% if language == 'pl' %}Czat{% else %}Chat{% endif %}</a>
+  </header>
+
+  <div class="container" style="margin-top: 4rem;">
+    <div class="card">
+      <div class="mic-icon">🎙️</div>
+      <h1>{% if language == 'pl' %}Głosowa recepcja{% else %}Voice Reception{% endif %}</h1>
+      <p class="subtitle">{% if language == 'pl' %}Porozmawiaj z naszym wirtualnym recepcjonistą — mów naturalnie, a my pomożemy zarezerwować pokój.{% else %}Talk to our virtual receptionist — speak naturally, and we will help you book a room.{% endif %}</p>
+
+      <div id="status" class="ready">
+        {% if language == 'pl' %}✅ Gotowy — naciśnij Start, aby rozmawiać{% else %}✅ Ready — press Start to talk{% endif %}
+      </div>
+
+      <div class="controls">
+        <button class="primary" id="callBtn">📞 {% if language == 'pl' %}Rozpocznij rozmowę{% else %}Start Call{% endif %}</button>
+        <button class="danger" id="stopBtn" disabled>⏹ Stop</button>
+      </div>
+
+      <div id="transcript"></div>
+      <div class="session-info" id="sessionInfo"></div>
+    </div>
+  </div>
 
   <script>
     const statusEl = document.getElementById('status');
     const transcriptEl = document.getElementById('transcript');
     const callBtn = document.getElementById('callBtn');
     const stopBtn = document.getElementById('stopBtn');
-    const outAudio = document.getElementById('outAudio');
+    const sessionInfoEl = document.getElementById('sessionInfo');
     const API = '/api/voice/turn/';
     const LANG = '{{ language }}';
     let mediaRecorder = null;
     let chunks = [];
+    let isCalling = false;
 
-    function setStatus(text) { statusEl.textContent = text; }
+    function setStatus(html, cls) {
+      statusEl.innerHTML = html;
+      statusEl.className = cls || '';
+    }
+
+    function appendTranscript(role, text) {
+      const label = role === 'guest'
+        ? (LANG === 'pl' ? 'Gość:' : 'Guest:')
+        : (LANG === 'pl' ? 'Recepcjonista:' : 'Agent:');
+      transcriptEl.textContent += `\n${label} ${text}\n`;
+      transcriptEl.scrollTop = transcriptEl.scrollHeight;
+    }
 
     async function startCall() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         chunks = [];
         mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+        isCalling = true;
+
+        mediaRecorder.ondataavailable = e => {
+          if (e.data.size > 0) chunks.push(e.data);
+        };
+
         mediaRecorder.onstop = async () => {
+          if (chunks.length === 0) {
+            setStatus(LANG === 'pl' ? '⚠️ Brak nagrania — spróbuj ponownie' : '⚠️ No recording detected — try again', 'error');
+            startRecording();
+            return;
+          }
+
           const blob = new Blob(chunks, { type: 'audio/webm' });
           const b64 = await toBase64(blob);
-          setStatus('Processing...');
-          const res = await fetch(API, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_key: window.__session || (window.__session = Math.random().toString(36).slice(2)), audio_b64: b64, mime: 'audio/webm', language: LANG }),
-          });
-          const data = await res.json();
-          transcriptEl.textContent = (transcriptEl.textContent || '') + '\nGuest: ' + (data.transcript || '') + '\nAgent: ' + (data.text || '');
-          if (data.audio_b64) {
-            outAudio.src = 'data:audio/mp3;base64,' + data.audio_b64;
-            outAudio.play();
+          setStatus('<span class="spinner">⏳</span> ' + (LANG === 'pl' ? 'Przetwarzanie...' : 'Processing...'), 'processing');
+
+          try {
+            const res = await fetch(API, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                session_key: window.__session || (window.__session = Math.random().toString(36).slice(2)),
+                audio_b64: b64,
+                mime: 'audio/webm',
+                language: LANG
+              }),
+            });
+            const data = await res.json();
+
+            if (data.session_key && !window.__session) {
+              window.__session = data.session_key;
+              sessionInfoEl.textContent = window.__session.slice(0, 12) + '...';
+            }
+
+            if (data.error) {
+              appendTranscript('agent', LANG === 'pl' ? '[Błąd] ' + data.error : '[Error] ' + data.error);
+              setStatus(LANG === 'pl' ? '❌ Błąd: ' + data.error : '❌ Error: ' + data.error, 'error');
+            } else if (data.text || data.transcript) {
+              if (data.transcript) appendTranscript('guest', data.transcript);
+              if (data.text) appendTranscript('agent', data.text);
+              if (data.audio_b64) playAudio(data.audio_b64);
+              setStatus(isCalling
+                ? (LANG === 'pl' ? '🎙️ Mów teraz...' : '🎙️ Speak now...')
+                : (LANG === 'pl' ? '✅ Rozmowa zakończona' : '✅ Call ended'),
+                isCalling ? 'listening' : 'ready'
+              );
+            }
+
+            if (isCalling) startRecording();
+          } catch (err) {
+            setStatus(LANG === 'pl' ? '❌ Błąd połączenia' : '❌ Connection error', 'error');
+            if (isCalling) startRecording();
           }
-          if (data.error) setStatus('Error: ' + data.error);
-          else setStatus('Call active - speak now.');
-          // Resume recording for the next turn.
-          startRecording();
         };
-        mediaRecorder.start();
+
+        startRecording();
         callBtn.disabled = true;
         stopBtn.disabled = false;
-        setStatus('Call active - speak now.');
+        transcriptEl.textContent = '';
+        setStatus(LANG === 'pl' ? '🎙️ Mów teraz...' : '🎙️ Speak now...', 'listening');
       } catch (err) {
-        setStatus('Microphone error: ' + err.message);
+        setStatus(
+          (LANG === 'pl' ? '❌ Błąd mikrofonu: ' : '❌ Mic error: ') + err.message,
+          'error'
+        );
       }
     }
 
     function startRecording() {
-      if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+      if (mediaRecorder && mediaRecorder.state !== 'recording') {
         chunks = [];
-        mediaRecorder.start();
+        mediaRecorder.start(1000); // Send 1s chunks for lower latency
       }
+    }
+
+    function playAudio(b64) {
+      const audio = new Audio('data:audio/webm;base64,' + b64);
+      audio.play().catch(() => {});
     }
 
     function toBase64(blob) {
@@ -89,10 +185,14 @@
 
     callBtn.addEventListener('click', startCall);
     stopBtn.addEventListener('click', () => {
+      isCalling = false;
       if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
       callBtn.disabled = false;
       stopBtn.disabled = true;
-      setStatus('Call ended.');
+      setStatus(
+        '<span>⏹️ </span>' + (LANG === 'pl' ? 'Rozmowa zakończona' : 'Call ended'),
+        'ready'
+      );
     });
   </script>
 </body>

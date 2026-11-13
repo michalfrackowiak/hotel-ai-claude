@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="{{ language }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hotel Aurora · AI Reception</title>
+  <style>
+    :root {
+      --primary: #1a73e8;
+      --primary-dark: #1557b0;
+      --bg: #f8f9fa;
+      --surface: #ffffff;
+      --text: #202124;
+      --text-secondary: #5f6368;
+      --border: #dadce0;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+    .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; }
+    .logo { display: flex; align-items: center; gap: 0.75rem; text-decoration: none; color: var(--text); }
+    .logo-icon { width: 40px; height: 40px; background: linear-gradient(135deg, var(--primary), #4285f4); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 1.2rem; }
+    .logo-text h1 { font-size: 1.25rem; font-weight: 600; }
+    .logo-text span { font-size: 0.75rem; color: var(--text-secondary); }
+    .nav-links { display: flex; gap: 1.5rem; align-items: center; }
+    .nav-links a { text-decoration: none; color: var(--text-secondary); font-weight: 500; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--primary); }
+    .lang-switch { padding: 0.5rem 1rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); cursor: pointer; font-size: 0.875rem; }
+    .hero { padding: 4rem 2rem; text-align: center; background: linear-gradient(180deg, #e8f0fe 0%, var(--bg) 100%); }
+    .hero h2 { font-size: 2.5rem; font-weight: 600; margin-bottom: 1rem; }
+    .hero p { font-size: 1.125rem; color: var(--text-secondary); max-width: 600px; margin: 0 auto 2rem; }
+    .hero-actions { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+    .btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.875rem 1.75rem; border-radius: 8px; font-size: 1rem; font-weight: 500; text-decoration: none; transition: all 0.2s; cursor: pointer; border: none; }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(26,115,232,0.3); }
+    .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--bg); border-color: var(--primary); color: var(--primary); }
+    .features { padding: 4rem 2rem; max-width: 1200px; margin: 0 auto; }
+    .features h3 { text-align: center; font-size: 1.75rem; margin-bottom: 3rem; }
+    .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 2rem; }
+    .feature-card { background: var(--surface); border-radius: 12px; padding: 2rem; border: 1px solid var(--border); transition: all 0.2s; }
+    .feature-card:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+    .feature-icon { width: 48px; height: 48px; background: linear-gradient(135deg, var(--primary), #4285f4); border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-bottom: 1rem; font-size: 1.5rem; }
+    .feature-card h4 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+    .feature-card p { color: var(--text-secondary); font-size: 0.95rem; }
+    .room-types { padding: 4rem 2rem; background: var(--surface); }
+    .room-types h3 { text-align: center; font-size: 1.75rem; margin-bottom: 3rem; }
+    .rooms-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; max-width: 1000px; margin: 0 auto; }
+    .room-card { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; transition: all 0.2s; }
+    .room-card:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+    .room-card-header { color: white; padding: 1.5rem; }
+    .room-card-header h4 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+    .room-card-header .price { font-size: 1.25rem; opacity: 0.9; }
+    .room-card-body { padding: 1.5rem; }
+    .room-card-body ul { list-style: none; margin-bottom: 1.5rem; }
+    .room-card-body li { padding: 0.5rem 0; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 0.5rem; }
+    .room-card-body li:last-child { border-bottom: none; }
+    .room-card-footer { padding: 0 1.5rem 1.5rem; }
+    .room-card-footer .btn { width: 100%; justify-content: center; }
+    .footer { background: var(--text); color: white; padding: 3rem 2rem; text-align: center; }
+    .footer p { opacity: 0.8; margin-bottom: 0.5rem; }
+    @media (max-width: 768px) { .hero h2 { font-size: 1.75rem; } .nav-links { gap: 1rem; } .header { padding: 1rem; } }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <a href="/" class="logo">
+      <div class="logo-icon">A</div>
+      <div class="logo-text">
+        <h1>Hotel Aurora</h1>
+        <span>AI Reception</span>
+      </div>
+    </a>
+    <nav class="nav-links">
+      <a href="/voice/?lang={{ language }}">{% if language == "pl" %}Golos{% else %}Voice{% endif %}</a>
+      <a href="/chat/?lang={{ language }}">{% if language == "pl" %}Czat{% else %}Chat{% endif %}</a>
+      <select class="lang-switch" id="langSwitch">
+        <option value="en" {% if language == "en" %}selected{% endif %}>English</option>
+        <option value="pl" {% if language == "pl" %}selected{% endif %}>Polski</option>
+      </select>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <h2>{% if language == "pl" %}Twój pobyt napędzany przez AI czeka{% else %}Your AI-Powered Stay Awaits{% endif %}</h2>
+    <p>{% if language == "pl" %}Doświadcz bezproblemowej rezerwacji dzięki naszemu inteligentnemu recepcjonistowi. Dostępne w języku polskim i angielskim.{% else %}Experience seamless reservation with our intelligent concierge. Available in English and Polish.{% endif %}</p>
+    <div class="hero-actions">
+      <a href="/voice/?lang={{ language }}" class="btn btn-primary">🎙️ {% if language == "pl" %}Rozpocznij rozmowę{% else %}Start Voice Call{% endif %}</a>
+      <a href="/chat/?lang={{ language }}" class="btn btn-secondary">💬 {% if language == "pl" %}Otwórz czat{% else %}Open Chat{% endif %}</a>
+    </div>
+  </section>
+
+  <section class="features">
+    <h3>{% if language == "pl" %}Jak to działa?{% else %}How It Works{% endif %}</h3>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🗣️</div>
+        <h4>{% if language == "pl" %}Mów naturalnie{% else %}Speak Naturally{% endif %}</h4>
+        <p>{% if language == "pl" %}Mów do naszego AI swoim językiem. Tak jak do prawdziwej recepcji.{% else %}Talk to our AI in your preferred language. Just like talking to a real receptionist.{% endif %}</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📅</div>
+        <h4>{% if language == "pl" %}Dostępność w czasie rzeczywistym{% else %}Real-Time Availability{% endif %}</h4>
+        <p>{% if language == "pl" %}Sprawdź dostępność pokoi i ceny natychmiast.{% else %}Check room availability and pricing instantly through our booking system.{% endif %}</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">✓</div>
+        <h4>{% if language == "pl" %}Natychmiastowe potwierdzenie{% else %}Instant Confirmation{% endif %}</h4>
+        <p>{% if language == "pl" %}Zakończ rezerwację w kilka minut z automatycznym potwierdzeniem.{% else %}Complete your reservation in minutes with automatic confirmation.{% endif %}</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="room-types">
+    <h3>{% if language == "pl" %}Nasze pokoje{% else %}Our Rooms{% endif %}</h3>
+    <div class="rooms-grid">
+      <div class="room-card">
+        <div class="room-card-header" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+          <h4>Single</h4>
+          <div class="price">220 PLN / night</div>
+        </div>
+        <div class="room-card-body">
+          <ul>
+            <li>✓ WiFi</li>
+            <li>✓ TV</li>
+            <li>✓ {% if language == "pl" %}Łazienka{% else %}En-suite bathroom{% endif %}</li>
+          </ul>
+        </div>
+        <div class="room-card-footer">
+          <a href="/chat/?lang={{ language }}" class="btn btn-primary">{% if language == "pl" %}Rezerwuj{% else %}Book Now{% endif %}</a>
+        </div>
+      </div>
+      <div class="room-card">
+        <div class="room-card-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+          <h4>Double</h4>
+          <div class="price">320 PLN / night</div>
+        </div>
+        <div class="room-card-body">
+          <ul>
+            <li>✓ WiFi</li>
+            <li>✓ TV</li>
+            <li>✓ Mini-bar</li>
+            <li>✓ {% if language == "pl" %}Łazienka{% else %}En-suite bathroom{% endif %}</li>
+          </ul>
+        </div>
+        <div class="room-card-footer">
+          <a href="/chat/?lang={{ language }}" class="btn btn-primary">{% if language == "pl" %}Rezerwuj{% else %}Book Now{% endif %}</a>
+        </div>
+      </div>
+      <div class="room-card">
+        <div class="room-card-header" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+          <h4>Suite</h4>
+          <div class="price">550 PLN / night</div>
+        </div>
+        <div class="room-card-body">
+          <ul>
+            <li>✓ WiFi</li>
+            <li>✓ TV</li>
+            <li>✓ {% if language == "pl" %}Salon{% else %}Living area{% endif %}</li>
+            <li>✓ {% if language == "pl" %}Balkon{% else %}Balcony{% endif %}</li>
+            <li>✓ {% if language == "pl" %}Łazienka{% else %}En-suite bathroom{% endif %}</li>
+          </ul>
+        </div>
+        <div class="room-card-footer">
+          <a href="/chat/?lang={{ language }}" class="btn btn-primary">{% if language == "pl" %}Rezerwuj{% else %}Book Now{% endif %}</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <p><strong>Hotel Aurora</strong></p>
+    <p>ul. Przykładowa 1, 00-001 Warszawa</p>
+    <p>reception@example.com | +48 22 000 00 00</p>
+    <p style="margin-top: 1.5rem; opacity: 0.6;">© 2026 Hotel Aurora · AI Reception Alpha</p>
+  </footer>
+
+  <script>
+    document.getElementById('langSwitch').addEventListener('change', function() {
+      window.location.href = '/?lang=' + this.value;
+    });
+  </script>
+</body>
+</html>

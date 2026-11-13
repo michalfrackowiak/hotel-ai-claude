@@ -19,6 +19,22 @@ from hotel_ai.ai_providers.models import Conversation
 logger = logging.getLogger(__name__)
 
 
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def chat_page(request):
+    """Render the chat UI."""
+    language = request.GET.get("lang", "en")
+    session_key = request.session.session_key or ""
+    context = {
+        "language": language,
+        "session_key": session_key,
+        "title": "AI Chat Reception" if language == "en" else "Czat z recepcjonistą",
+        "placeholder": "Type your message..." if language == "en" else "Napisz wiadomość...",
+    }
+    from django.shortcuts import render
+    return render(request, "chat/index.html", context)
+
+
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def chat_turn(request):

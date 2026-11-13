@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="{{ language }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% if language == 'pl' %}Czat z recepcjonistą{% else %}AI Chat Reception{% endif %}</title>
+  <style>
+    :root {
+      --primary: #1a73e8;
+      --bg: #f0f2f5;
+      --surface: #ffffff;
+      --text: #202124;
+      --text-secondary: #5f6368;
+      --user-bg: #1a73e8;
+      --user-text: #ffffff;
+      --agent-bg: #e8eaed;
+      --agent-text: #202124;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid #dadce0;
+      padding: 0.875rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .back-btn {
+      text-decoration: none;
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+      padding: 0.25rem 0.75rem;
+      border: 1px solid #dadce0;
+      border-radius: 6px;
+    }
+
+    .back-btn:hover { background: var(--bg); }
+
+    .header-title h2 {
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+
+    .header-title span {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+
+    .chat-container {
+      flex: 1;
+      display: flex;
+      max-width: 700px;
+      width: 100%;
+      margin: 0 auto;
+      overflow: hidden;
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .message {
+      max-width: 85%;
+      padding: 0.875rem 1.125rem;
+      border-radius: 18px;
+      line-height: 1.5;
+      word-wrap: break-word;
+      white-space: pre-wrap;
+    }
+
+    .message.agent {
+      background: var(--agent-bg);
+      color: var(--agent-text);
+      align-self: flex-start;
+      border-bottom-left-radius: 6px;
+    }
+
+    .message.user {
+      background: var(--user-bg);
+      color: var(--user-text);
+      align-self: flex-end;
+      border-bottom-right-radius: 6px;
+    }
+
+    .message.error {
+      background: #fce8e6;
+      color: #c5221f;
+      align-self: center;
+      text-align: center;
+    }
+
+    .input-area {
+      background: var(--surface);
+      border-top: 1px solid #dadce0;
+      padding: 1rem 1.5rem;
+      display: flex;
+      gap: 0.75rem;
+    }
+
+    .input-area textarea {
+      flex: 1;
+      border: 1px solid #dadce0;
+      border-radius: 24px;
+      padding: 0.75rem 1.25rem;
+      font-size: 1rem;
+      resize: none;
+      outline: none;
+      font-family: inherit;
+      min-height: 44px;
+      max-height: 120px;
+    }
+
+    .input-area textarea:focus { border-color: var(--primary); }
+
+    .send-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: none;
+      background: var(--primary);
+      color: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+
+    .send-btn:hover { background: #1557b0; }
+    .send-btn:disabled { background: #dadce0; cursor: not-allowed; }
+
+    .typing {
+      align-self: flex-start;
+      padding: 0.875rem 1.125rem;
+      background: var(--agent-bg);
+      border-radius: 18px;
+      border-bottom-left-radius: 6px;
+      color: var(--text-secondary);
+      font-style: italic;
+      font-size: 0.875rem;
+    }
+
+    @media (max-width: 768px) {
+      .chat-container { max-width: 100%; }
+      .messages { padding: 1rem; }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-left">
+      <a href="/" class="back-btn">&larr; {% if language == 'pl' %}Powrót{% else %}Back{% endif %}</a>
+      <div class="header-title">
+        <h2>🤖 {{ title }}</h2>
+        <span id="sessionInfo">{{ session_key|default:'Nowa rozmowa' }}</span>
+      </div>
+    </div>
+    <a href="/voice/" class="back-btn">🎙️ Voice</a>
+  </header>
+
+  <div class="chat-container">
+    <div class="messages" id="messages"></div>
+  </div>
+
+  <div class="input-area">
+    <textarea id="msgInput" rows="1" placeholder="{{ placeholder }}"></textarea>
+    <button class="send-btn" id="sendBtn">&#9658;</button>
+  </div>
+
+  <script>
+    let sessionKey = "{{ session_key }}";
+    const language = "{{ language }}";
+    const input = document.getElementById('msgInput');
+    const messagesEl = document.getElementById('messages');
+    const sendBtn = document.getElementById('sendBtn');
+
+    function scrollBottom() {
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function addMessage(text, type) {
+      const div = document.createElement('div');
+      div.className = `message ${type}`;
+      div.textContent = text;
+      messagesEl.appendChild(div);
+      scrollBottom();
+      return div;
+    }
+
+    function showTyping() {
+      const div = document.createElement('div');
+      div.className = 'typing';
+      div.id = 'typingIndicator';
+      div.textContent = language === 'pl' ? 'Pisanie...' : 'Typing...';
+      messagesEl.appendChild(div);
+      scrollBottom();
+    }
+
+    function removeTyping() {
+      const t = document.getElementById('typingIndicator');
+      if (t) t.remove();
+    }
+
+    async function sendMessage() {
+      const text = input.value.trim();
+      if (!text) return;
+
+      addMessage(text, 'user');
+      input.value = '';
+      input.style.height = 'auto';
+      sendBtn.disabled = true;
+      showTyping();
+
+      try {
+        const resp = await fetch('/chat/turn/', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            session_key: sessionKey,
+            language: language,
+            message: text
+          })
+        });
+        const data = await resp.json();
+        removeTyping();
+        if (data.reply) {
+          addMessage(data.reply, 'agent');
+        }
+        if (!sessionKey || sessionKey === '') {
+          sessionKey = data.session_key;
+          document.getElementById('sessionInfo').textContent = data.session_key.slice(0, 12) + '...';
+        }
+        if (data.booking_id) {
+          setTimeout(() => {
+            alert(language === 'pl'
+              ? `Rezerwacja potwierdzona! ID: ${data.booking_id}`
+              : `Booking confirmed! ID: ${data.booking_id}`);
+          }, 300);
+        }
+      } catch (err) {
+        removeTyping();
+        addMessage(language === 'pl' ? 'Błąd połączenia. Spróbuj ponownie.' : 'Connection error. Please retry.', 'error');
+      } finally {
+        sendBtn.disabled = false;
+        input.focus();
+      }
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    });
+    input.addEventListener('input', () => {
+      input.style.height = 'auto';
+      input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+    });
+
+    // Initial greeting
+    setTimeout(() => {
+      const greeting = language === 'pl'
+        ? 'Dzień dobry! Jestem recepcjonistką hotelu Aurora. Mogę sprawdzić dostępność pokoi, zarezerwować dla Państwa miejsce lub odpowiedzieć na pytania. W czym mogę pomóc?'
+        : 'Good day! I am the AI receptionist at Hotel Aurora. I can check room availability, make reservations for you, or answer any questions. How may I help?';
+      addMessage(greeting, 'agent');
+    }, 300);
+  </script>
+</body>
+</html>
