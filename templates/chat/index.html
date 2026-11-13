@@ -172,13 +172,13 @@
 <body>
   <header class="header">
     <div class="header-left">
-      <a href="/" class="back-btn">&larr; {% if language == 'pl' %}Powrót{% else %}Back{% endif %}</a>
+      <a href="/?lang={{ language }}" class="back-btn">&larr; {% if language == 'pl' %}Powrót{% else %}Back{% endif %}</a>
       <div class="header-title">
         <h2>🤖 {{ title }}</h2>
-        <span id="sessionInfo">{{ session_key|default:'Nowa rozmowa' }}</span>
+        <span id="sessionInfo">{{ session_key|default:default_session_label }}</span>
       </div>
     </div>
-    <a href="/voice/" class="back-btn">🎙️ Voice</a>
+    <a href="/voice/?lang={{ language }}" class="back-btn">🎙️ {% if language == 'pl' %}Głos{% else %}Voice{% endif %}</a>
   </header>
 
   <div class="chat-container">
