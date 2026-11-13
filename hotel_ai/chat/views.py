@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from rest_framework import status
+
 from hotel_ai.ai_providers.agent import ReservationAgent
+from hotel_ai.ai_providers.base import AIProviderError
 from hotel_ai.ai_providers.models import Conversation
+
+
+logger = logging.getLogger(__name__)
 
 
 @api_view(["POST"])
@@ -35,8 +42,21 @@ def chat_turn(request):
         conversation.language = language
         conversation.save(update_fields=["language"])
 
-    agent = ReservationAgent(language=language)
-    result = agent.handle_message(conversation, message)
+    try:
+        agent = ReservationAgent(language=language)
+        result = agent.handle_message(conversation, message)
+    except AIProviderError as exc:
+        logger.warning("AI provider error for session %s: %s", session_key, exc)
+        return Response(
+            {
+                "session_key": session_key,
+                "reply": "Przepraszam, serwer AI jest chwilowo niedostępny. Spróbuj ponownie za chwilę.",
+                "action": None,
+                "booking_id": None,
+                "error": "provider_error",
+            },
+            status=503,
+        )
 
     return Response(
         {

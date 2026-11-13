@@ -203,6 +203,40 @@ def test_agent_system_prompt_contains_today_and_room_types(hotel):
     assert "Double" in prompt
 
 
+@pytest.mark.django_db
+def test_agent_polish_prompt_is_natural_polish(hotel):
+    """The Polish prompt should sound like a real receptionist, not a
+    template - warm, colloquial, and never fall back to English."""
+    agent = ReservationAgent(language="pl")
+    prompt = agent.system_prompt()
+    # Warm, natural Polish openings and fillers.
+    for phrase in ("Dzień dobry", "Jasne", "Chwila", "Zrobimy to", "Proszę bardzo"):
+        assert phrase in prompt, f"missing natural Polish phrase: {phrase}"
+    # No English boilerplate leaked in.
+    assert "Rules:" not in prompt
+    assert "Reply ONLY" not in prompt
+
+
+@pytest.mark.django_db
+def test_agent_polish_reply_is_polish(hotel):
+    provider = FakeProvider(
+        {"provider_type": "fake", "model": "fake-pl"},
+        replies=[
+            json.dumps(
+                {"action": "reply", "text": "Dzień dobry! Chętnie na pokój na 2 noce w grudniu."}
+            ),
+        ],
+    )
+    agent = ReservationAgent(language="pl", provider=provider)
+    conv = Conversation.objects.create(session_key="pl-1", channel="chat", language="pl")
+    result = agent.handle_message(conv, "Dzień dobry, chętnie na pokój na 2 noce w grudniu")
+    assert result.text.startswith("Dzień dobry")
+    assert "grudniu" in result.text
+    # No English leaked into the reply.
+    assert "Sure" not in result.text
+    assert "Hello" not in result.text
+
+
 # ---------------------------------------------------------------------------
 # Provider models / factory
 # ---------------------------------------------------------------------------
