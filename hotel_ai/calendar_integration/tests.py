@@ -96,3 +96,25 @@ def test_event_payload_shape(hotel):
     assert payload["end"]["dateTime"].startswith("2026-07-03T11:00:00")
     assert "Ada Lovelace" in payload["summary"]
     assert "Booking #".lower() in payload["description"].lower() or "Booking #" in payload["description"]
+
+
+@pytest.mark.django_db
+def test_cancel_booking_records_sync_attempt(hotel):
+    """Cancelling goes through the service layer so the calendar audit row updates."""
+    client = Client.objects.create(first_name="A", last_name="B")
+    booking = create_booking(
+        room=hotel["room"],
+        client=client,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+    )
+    assert booking.status == "confirmed"
+
+    cancel_booking(booking)
+    assert booking.status == "cancelled"
+    # The sync row still exists after cancellation (status recorded, no crash).
+    assert CalendarSync.objects.filter(booking=booking).exists()
+
+    # Cancelling twice is idempotent and does not raise.
+    cancel_booking(booking)
+    assert booking.status == "cancelled"
