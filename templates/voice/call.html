@@ -89,7 +89,7 @@
 
       <div class="controls">
         <button class="primary" id="callBtn">📞 {% if language == 'pl' %}Rozpocznij rozmowę{% else %}Start Call{% endif %}</button>
-        <button class="danger" id="stopBtn" disabled>⏹ {% if language == 'pl' %}Stop{% else %}Stop{% endif %}</button>
+        <button class="danger" id="stopBtn" disabled>⏹ {% if language == 'pl' %}Zatrzymaj{% else %}Stop{% endif %}</button>
       </div>
 
       <div id="transcript"></div>
@@ -108,6 +108,18 @@
     const bouncingBalls = document.getElementById('bouncingBalls');
     const API = '/api/voice/turn/';
     const LANG = '{{ language }}';
+    const T = {
+      ready: LANG === 'pl' ? '✅ Gotowy — naciśnij Start, aby rozmawiać' : '✅ Ready — press Start to talk',
+      listening: LANG === 'pl' ? '🎙️ Słucham...' : '🎙️ Listening...',
+      processing: LANG === 'pl' ? '⏳ Przetwarzanie...' : '⏳ Processing...',
+      ended: LANG === 'pl' ? '✅ Rozmowa zakończona' : '✅ Call ended',
+      noRecord: LANG === 'pl' ? '⚠️ Brak nagrania — spróbuj ponownie' : '⚠️ No recording detected — try again',
+      error: LANG === 'pl' ? '❌ Błąd połączenia' : '❌ Connection error',
+      micError: LANG === 'pl' ? '❌ Błąd mikrofonu:' : '❌ Mic error:',
+      guest: LANG === 'pl' ? 'Gość:' : 'Guest:',
+      agent: LANG === 'pl' ? 'Recepcjonista:' : 'Agent:',
+      errPrefix: LANG === 'pl' ? '[Błąd] ' : '[Error] '
+    };
     let mediaRecorder = null;
     let audioContext = null;
     let analyser = null;
@@ -122,9 +134,7 @@
     }
 
     function appendTranscript(role, text) {
-      const label = role === 'guest'
-        ? (LANG === 'pl' ? 'Gość:' : 'Guest:')
-        : (LANG === 'pl' ? 'Recepcjonista:' : 'Agent:');
+      const label = role === 'guest' ? T.guest : T.agent;
       transcriptEl.textContent += `\n${label} ${text}\n`;
       transcriptEl.scrollTop = transcriptEl.scrollHeight;
     }
@@ -144,14 +154,14 @@
 
         mediaRecorder.onstop = async () => {
           if (chunks.length === 0) {
-            setStatus(LANG === 'pl' ? '⚠️ Brak nagrania — spróbuj ponownie' : '⚠️ No recording detected — try again', 'error');
+            setStatus(T.noRecord, 'error');
             startRecording();
             return;
           }
 
           const blob = new Blob(chunks, { type: 'audio/webm' });
           const b64 = await toBase64(blob);
-          setStatus('<span class="spinner">⏳</span> ' + (LANG === 'pl' ? 'Przetwarzanie...' : 'Processing...'), 'processing');
+          setStatus('<span class="spinner">⏳</span> ' + T.processing, 'processing');
 
           try {
             const res = await fetch(API, {
@@ -172,8 +182,8 @@
             }
 
             if (data.error) {
-              appendTranscript('agent', LANG === 'pl' ? '[Błąd] ' + data.error : '[Error] ' + data.error);
-              setStatus(LANG === 'pl' ? '❌ Błąd: ' + data.error : '❌ Error: ' + data.error, 'error');
+              appendTranscript('agent', T.errPrefix + data.error);
+              setStatus(T.errPrefix + data.error, 'error');
             } else if (data.text || data.transcript) {
               if (data.transcript) appendTranscript('guest', data.transcript);
               if (data.text) appendTranscript('agent', data.text);
@@ -184,16 +194,12 @@
                 bouncingBalls.classList.add('active');
                 setTimeout(() => bouncingBalls.classList.remove('active'), 1000);
               }
-              setStatus(isCalling
-                ? (LANG === 'pl' ? '🎙️ Słucham...' : '🎙️ Listening...')
-                : (LANG === 'pl' ? '✅ Rozmowa zakończona' : '✅ Call ended'),
-                isCalling ? 'listening' : 'ready'
-              );
+              setStatus(isCalling ? T.listening : T.ended, isCalling ? 'listening' : 'ready');
             }
 
             if (isCalling) startRecording();
           } catch (err) {
-            setStatus(LANG === 'pl' ? '❌ Błąd połączenia' : '❌ Connection error', 'error');
+            setStatus(T.error, 'error');
             if (isCalling) startRecording();
           }
         };
@@ -204,10 +210,10 @@
         transcriptEl.textContent = '';
         showListening();
         visualizeVoice();
-        setStatus(LANG === 'pl' ? '🎙️ Mów teraz...' : '🎙️ Speak now...', 'listening');
+        setStatus(T.listening, 'listening');
       } catch (err) {
         setStatus(
-          (LANG === 'pl' ? '❌ Błąd mikrofonu: ' : '❌ Mic error: ') + err.message,
+          T.micError + ' ' + err.message,
           'error'
         );
       }
@@ -300,7 +306,7 @@
       callBtn.disabled = false;
       stopBtn.disabled = true;
       setStatus(
-        '<span>⏹️ </span>' + (LANG === 'pl' ? 'Rozmowa zakończona' : 'Call ended'),
+        '<span>⏹️ </span>' + T.ended,
         'ready'
       );
     });
