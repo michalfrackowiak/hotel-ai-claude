@@ -17,7 +17,27 @@
     .card { background: var(--surface); border-radius: 16px; padding: 2rem; border: 1px solid var(--border); text-align: center; }
     h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
     .subtitle { color: var(--text-secondary); margin-bottom: 2rem; }
-    .mic-icon { width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #4285f4); display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem; font-size: 2rem; color: white; }
+    .mic-icon { width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #4285f4); display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem; font-size: 2rem; color: white; position: relative; z-index: 2; }
+    /* Speaking ball */
+    .speaking-container { width: 80px; height: 80px; margin: 0 auto 1.5rem; position: relative; display: none; }
+    .speaking-container.active { display: block; }
+    .ball { width: 40px; height: 40px; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 50%; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); box-shadow: 0 4px 15px rgba(102,126,234,0.4); z-index: 2; }
+    .pulse-ring { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80px; height: 80px; border-radius: 50%; border: 3px solid rgba(102,126,234,0.6); animation: pulse-ring 1.2s ease-out infinite; }
+    .pulse-ring:nth-child(2) { animation-delay: 0.4s; }
+    .pulse-ring:nth-child(3) { animation-delay: 0.8s; }
+    @keyframes pulse-ring {
+      0% { width: 40px; height: 40px; opacity: 1; border-width: 3px; }
+      100% { width: 90px; height: 90px; opacity: 0; border-width: 1px; }
+    }
+    .bouncing-balls { display: none; justify-content: center; gap: 6px; margin: 0 auto 1.5rem; width: 80px; }
+    .bouncing-balls.active { display: flex; }
+    .bounce-ball { width: 14px; height: 14px; background: linear-gradient(135deg, var(--primary), #4285f4); border-radius: 50%; animation: bounce 0.8s ease-in-out infinite; }
+    .bounce-ball:nth-child(2) { animation-delay: 0.15s; background: linear-gradient(135deg, #667eea, #764ba2); }
+    .bounce-ball:nth-child(3) { animation-delay: 0.3s; background: linear-gradient(135deg, #f093fb, #f5576c); }
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-18px); }
+    }
     .controls { display: flex; gap: 1rem; justify-content: center; margin-bottom: 1.5rem; }
     button { font-size: 1rem; padding: 0.75rem 1.5rem; border: none; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
     button.primary { background: var(--primary); color: white; }
@@ -45,7 +65,21 @@
 
   <div class="container" style="margin-top: 4rem;">
     <div class="card">
-      <div class="mic-icon">🎙️</div>
+      <!-- Mic icon when idle -->
+      <div class="mic-icon" id="micIcon">🎙️</div>
+      <!-- Speaking animation container -->
+      <div class="speaking-container" id="speakingContainer">
+        <div class="pulse-ring"></div>
+        <div class="pulse-ring"></div>
+        <div class="pulse-ring"></div>
+        <div class="ball"></div>
+      </div>
+      <!-- Bouncing balls during response -->
+      <div class="bouncing-balls" id="bouncingBalls">
+        <div class="bounce-ball"></div>
+        <div class="bounce-ball"></div>
+        <div class="bounce-ball"></div>
+      </div>
       <h1>{% if language == 'pl' %}Głosowa recepcja{% else %}Voice Reception{% endif %}</h1>
       <p class="subtitle">{% if language == 'pl' %}Porozmawiaj z naszym wirtualnym recepcjonistą — mów naturalnie, a my pomożemy zarezerwować pokój.{% else %}Talk to our virtual receptionist — speak naturally, and we will help you book a room.{% endif %}</p>
 
@@ -55,7 +89,7 @@
 
       <div class="controls">
         <button class="primary" id="callBtn">📞 {% if language == 'pl' %}Rozpocznij rozmowę{% else %}Start Call{% endif %}</button>
-        <button class="danger" id="stopBtn" disabled>⏹ Stop</button>
+        <button class="danger" id="stopBtn" disabled>⏹ {% if language == 'pl' %}Stop{% else %}Stop{% endif %}</button>
       </div>
 
       <div id="transcript"></div>
@@ -69,10 +103,17 @@
     const callBtn = document.getElementById('callBtn');
     const stopBtn = document.getElementById('stopBtn');
     const sessionInfoEl = document.getElementById('sessionInfo');
+    const micIcon = document.getElementById('micIcon');
+    const speakingContainer = document.getElementById('speakingContainer');
+    const bouncingBalls = document.getElementById('bouncingBalls');
     const API = '/api/voice/turn/';
     const LANG = '{{ language }}';
     let mediaRecorder = null;
-    let chunks = [];
+    let audioContext = null;
+    let analyser = null;
+    let micStream = null;
+    let animFrameId = null;
+    let isSpeaking = false;
     let isCalling = false;
 
     function setStatus(html, cls) {
@@ -90,9 +131,11 @@
 
     async function startCall() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         chunks = [];
-        mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        mediaRecorder = new MediaRecorder(micStream, { mimeType: 'audio/webm' });
+        // Set up voice activity detection
+        setupVoiceActivity();
         isCalling = true;
 
         mediaRecorder.ondataavailable = e => {
@@ -134,9 +177,15 @@
             } else if (data.text || data.transcript) {
               if (data.transcript) appendTranscript('guest', data.transcript);
               if (data.text) appendTranscript('agent', data.text);
-              if (data.audio_b64) playAudio(data.audio_b64);
+              if (data.audio_b64) {
+                playAudio(data.audio_b64);
+              } else {
+                // Text-only response — bounce briefly
+                bouncingBalls.classList.add('active');
+                setTimeout(() => bouncingBalls.classList.remove('active'), 1000);
+              }
               setStatus(isCalling
-                ? (LANG === 'pl' ? '🎙️ Mów teraz...' : '🎙️ Speak now...')
+                ? (LANG === 'pl' ? '🎙️ Słucham...' : '🎙️ Listening...')
                 : (LANG === 'pl' ? '✅ Rozmowa zakończona' : '✅ Call ended'),
                 isCalling ? 'listening' : 'ready'
               );
@@ -153,6 +202,8 @@
         callBtn.disabled = true;
         stopBtn.disabled = false;
         transcriptEl.textContent = '';
+        showListening();
+        visualizeVoice();
         setStatus(LANG === 'pl' ? '🎙️ Mów teraz...' : '🎙️ Speak now...', 'listening');
       } catch (err) {
         setStatus(
@@ -171,7 +222,66 @@
 
     function playAudio(b64) {
       const audio = new Audio('data:audio/webm;base64,' + b64);
-      audio.play().catch(() => {});
+      audio.addEventListener('canplay', () => {
+        showSpeaking();
+      });
+      audio.addEventListener('ended', () => {
+        hideSpeaking();
+      });
+      audio.play().catch(() => hideSpeaking());
+    }
+
+    function setupVoiceActivity() {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      const source = audioContext.createMediaStreamSource(micStream);
+      source.connect(analyser);
+    }
+
+    function visualizeVoice() {
+      if (!analyser) return;
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      analyser.getByteFrequencyData(dataArray);
+      const avg = Array.from(dataArray).reduce((a, b) => a + b, 0) / bufferLength;
+      // Threshold for detecting speech (tunable)
+      const isSpeech = avg > 15;
+      if (isSpeech !== isSpeaking) {
+        isSpeaking = isSpeech;
+        if (isSpeech && isCalling) {
+          showListening();
+          setStatus(LANG === 'pl' ? '🎙️ Słucham...' : '🎙️ Listening...', 'listening');
+        } else if (!isSpeech && !isCalling) {
+          micIcon.style.display = '';
+        }
+      }
+      animFrameId = requestAnimationFrame(visualizeVoice);
+    }
+
+    function showSpeaking() {
+      micIcon.style.display = 'none';
+      bouncingBalls.classList.remove('active');
+      speakingContainer.classList.add('active');
+    }
+
+    function hideSpeaking() {
+      speakingContainer.classList.remove('active');
+      if (isCalling) {
+        bouncingBalls.classList.add('active');
+        setTimeout(() => {
+          bouncingBalls.classList.remove('active');
+          micIcon.style.display = '';
+        }, 800);
+      } else {
+        micIcon.style.display = '';
+      }
+    }
+
+    function showListening() {
+      micIcon.style.display = '';
+      speakingContainer.classList.remove('active');
+      bouncingBalls.classList.remove('active');
     }
 
     function toBase64(blob) {
