@@ -1,0 +1,98 @@
+"""Tests for Google Calendar integration."""
+
+from __future__ import annotations
+
+import datetime as _dt
+from decimal import Decimal
+
+import pytest
+
+from hotel_ai.bookings.models import Client, Room, RoomType
+from hotel_ai.bookings.services import cancel_booking, create_booking
+
+from .models import CalendarSync, GoogleCalendarConnection, RoomCalendar
+from .services import ensure_room_calendar, sync_booking
+
+
+@pytest.fixture
+def hotel(db):
+    double = RoomType.objects.create(name="Double", base_price_per_night=Decimal("300.00"), capacity=2)
+    room = Room.objects.create(room_number="201", room_type=double)
+    return {"room": room, "room_type": double}
+
+
+@pytest.mark.django_db
+def test_sync_skipped_without_mapping(hotel):
+    client = Client.objects.create(first_name="A", last_name="B")
+    booking = create_booking(
+        room=hotel["room"],
+        client=client,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+    )
+    sync = CalendarSync.objects.filter(booking=booking).first()
+    assert sync is not None
+    assert sync.status == "skipped"
+
+
+@pytest.mark.django_db
+def test_sync_skipped_without_connection(hotel):
+    room_calendar = ensure_room_calendar(hotel["room"])
+    client = Client.objects.create(first_name="A", last_name="B")
+    booking = create_booking(
+        room=hotel["room"],
+        client=client,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+    )
+    sync = CalendarSync.objects.get(booking=booking, room_calendar=room_calendar)
+    assert sync.status == "skipped"
+
+
+@pytest.mark.django_db
+def test_sync_failure_recorded_not_raised(hotel):
+    """A broken Google connection records 'failed', never breaks the booking."""
+    conn = GoogleCalendarConnection.objects.create(google_user_email="desk@hotel.com")
+    rc = ensure_room_calendar(hotel["room"])
+    rc.connection = conn
+    rc.calendar_id = "primary"
+    rc.save()
+
+    client = Client.objects.create(first_name="A", last_name="B")
+    booking = create_booking(
+        room=hotel["room"],
+        client=client,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+    )
+    # Booking still created and confirmed even though sync fails.
+    assert booking.status == "confirmed"
+    sync = CalendarSync.objects.get(booking=booking)
+    assert sync.status == "failed"
+    assert sync.error_message
+
+
+@pytest.mark.django_db
+def test_ensure_room_calendar_idempotent(hotel):
+    rc1 = ensure_room_calendar(hotel["room"])
+    rc2 = ensure_room_calendar(hotel["room"])
+    assert rc1.id == rc2.id
+
+
+@pytest.mark.django_db
+def test_event_payload_shape(hotel):
+    from .services import _event_payload
+
+    client = Client.objects.create(first_name="Ada", last_name="Lovelace", email="ada@x.com")
+    booking = create_booking(
+        room=hotel["room"],
+        client=client,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+        guests=2,
+    )
+    payload = _event_payload(booking)
+    assert payload["start"]["dateTime"].startswith("2026-07-01T15:00:00")
+    assert payload["end"]["dateTime"].startswith("2026-07-03T11:00:00")
+    assert "Ada Lovelace" in payload["summary"]
+    assert "Booking #".lower() in payload["description"].lower() or "Booking #" in payload["description"]

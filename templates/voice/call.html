@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="{{ language }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hotel AI - Voice Reception</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; text-align: center; }
+    #status { color: #555; margin: 1rem 0; }
+    button { font-size: 1rem; padding: .6rem 1.4rem; margin: .3rem; border: none; border-radius: 6px; cursor: pointer; }
+    button.primary { background: #1a73e8; color: #fff; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    #transcript { white-space: pre-wrap; background: #f5f5f5; padding: 1rem; border-radius: 6px; min-height: 80px; }
+    audio { width: 100%; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Hotel AI - Voice Reception</h1>
+  <p>Language: <strong>{{ language }}</strong></p>
+  <div id="status">Ready.</div>
+  <button class="primary" id="callBtn">Start call</button>
+  <button id="stopBtn" disabled>Stop</button>
+  <div id="transcript"></div>
+  <audio id="outAudio" controls></audio>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const transcriptEl = document.getElementById('transcript');
+    const callBtn = document.getElementById('callBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const outAudio = document.getElementById('outAudio');
+    const API = '/api/voice/turn/';
+    const LANG = '{{ language }}';
+    let mediaRecorder = null;
+    let chunks = [];
+
+    function setStatus(text) { statusEl.textContent = text; }
+
+    async function startCall() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        chunks = [];
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+        mediaRecorder.onstop = async () => {
+          const blob = new Blob(chunks, { type: 'audio/webm' });
+          const b64 = await toBase64(blob);
+          setStatus('Processing...');
+          const res = await fetch(API, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_key: window.__session || (window.__session = Math.random().toString(36).slice(2)), audio_b64: b64, mime: 'audio/webm', language: LANG }),
+          });
+          const data = await res.json();
+          transcriptEl.textContent = (transcriptEl.textContent || '') + '\nGuest: ' + (data.transcript || '') + '\nAgent: ' + (data.text || '');
+          if (data.audio_b64) {
+            outAudio.src = 'data:audio/mp3;base64,' + data.audio_b64;
+            outAudio.play();
+          }
+          if (data.error) setStatus('Error: ' + data.error);
+          else setStatus('Call active - speak now.');
+          // Resume recording for the next turn.
+          startRecording();
+        };
+        mediaRecorder.start();
+        callBtn.disabled = true;
+        stopBtn.disabled = false;
+        setStatus('Call active - speak now.');
+      } catch (err) {
+        setStatus('Microphone error: ' + err.message);
+      }
+    }
+
+    function startRecording() {
+      if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+        chunks = [];
+        mediaRecorder.start();
+      }
+    }
+
+    function toBase64(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    callBtn.addEventListener('click', startCall);
+    stopBtn.addEventListener('click', () => {
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+      callBtn.disabled = false;
+      stopBtn.disabled = true;
+      setStatus('Call ended.');
+    });
+  </script>
+</body>
+</html>
