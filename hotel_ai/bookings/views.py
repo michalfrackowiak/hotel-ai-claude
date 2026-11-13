@@ -29,6 +29,7 @@ from .serializers import (
 from .services import (
     availability_summary,
     calculate_total,
+    cancel_booking,
     create_booking,
     effective_price,
     find_available_rooms,
@@ -217,8 +218,7 @@ class BookingCancelView(APIView):
             return JsonResponse(
                 {"booking": BookingSerializer(booking).data, "message": "Already cancelled."}
             )
-        booking.status = BookingStatus.CANCELLED
-        booking.save()
+        booking = cancel_booking(booking)
         return JsonResponse({
             "booking": BookingSerializer(booking).data,
             "message": f"Booking {booking.id} cancelled.",
