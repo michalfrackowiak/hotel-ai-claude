@@ -30,6 +30,7 @@ def chat_page(request):
         "session_key": session_key,
         "title": "AI Chat Reception" if language == "en" else "Czat z recepcjonistą",
         "placeholder": "Type your message..." if language == "en" else "Napisz wiadomość...",
+        "default_session_label": "New conversation" if language == "en" else "Nowa rozmowa",
     }
     from django.shortcuts import render
     return render(request, "chat/index.html", context)

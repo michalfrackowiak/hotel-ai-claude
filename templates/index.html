@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hotel Aurora · AI Reception</title>
+  <title>{% if language == "pl" %}Hotel Aurora · AI Recepcja{% else %}Hotel Aurora · AI Reception{% endif %}</title>
   <style>
     :root {
       --primary: #1a73e8;
@@ -71,7 +71,7 @@
       </div>
     </a>
     <nav class="nav-links">
-      <a href="/voice/?lang={{ language }}">{% if language == "pl" %}Golos{% else %}Voice{% endif %}</a>
+      <a href="/voice/?lang={{ language }}">{% if language == "pl" %}Głos{% else %}Voice{% endif %}</a>
       <a href="/chat/?lang={{ language }}">{% if language == "pl" %}Czat{% else %}Chat{% endif %}</a>
       <select class="lang-switch" id="langSwitch">
         <option value="en" {% if language == "en" %}selected{% endif %}>English</option>
