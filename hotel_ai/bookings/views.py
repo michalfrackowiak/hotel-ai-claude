@@ -333,3 +333,60 @@ def booking_admin(request):
             "check_in_to": check_in_to,
         },
     })
+
+
+@login_required
+def booking_export(request):
+    """Export bookings as CSV."""
+    qs = Booking.objects.select_related("room", "room__room_type", "client").order_by("-check_in")
+
+    status_filter = request.GET.get("status", "")
+    room_type = request.GET.get("room_type", "")
+    search = request.GET.get("search", "").strip()
+    check_in_from = request.GET.get("check_in_from", "")
+    check_in_to = request.GET.get("check_in_to", "")
+
+    if status_filter and status_filter != "all":
+        qs = qs.filter(status=status_filter)
+    if room_type:
+        qs = qs.filter(room__room_type__name=room_type)
+    if search:
+        from django.db.models import Q
+        qs = qs.filter(
+            Q(client__first_name__icontains=search)
+            | Q(client__last_name__icontains=search)
+            | Q(client__email__icontains=search)
+        )
+    if check_in_from:
+        qs = qs.filter(check_in__gte=check_in_from)
+    if check_in_to:
+        qs = qs.filter(check_in__lte=check_in_to)
+
+    import csv
+    from django.http import HttpResponse
+
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="bookings-export.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow(["ID", "Client", "Email", "Room Number", "Room Type", "Check-in", "Check-out", "Nights", "Guests", "Total Price", "Currency", "Status", "Source", "Created At"])
+
+    for b in qs:
+        writer.writerow([
+            b.id,
+            b.client.full_name,
+            b.client.email,
+            b.room.room_number,
+            b.room.room_type.name,
+            b.check_in.isoformat(),
+            b.check_out.isoformat(),
+            b.nights,
+            b.guests,
+            str(b.total_price),
+            b.currency,
+            b.status,
+            b.source,
+            b.created_at.strftime("%Y-%m-%d %H:%M"),
+        ])
+
+    return response

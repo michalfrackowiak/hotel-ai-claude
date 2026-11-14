@@ -16,6 +16,7 @@ from .views import (
     RoomListView,
     RoomTypeListView,
     booking_admin,
+    booking_export,
 )
 
 app_name = "bookings"
@@ -34,4 +35,5 @@ urlpatterns = [
     path("availability/", AvailabilityView.as_view(), name="availability"),
     path("pricing/", PricingView.as_view(), name="pricing"),
     path("admin/", booking_admin, name="booking-admin"),
+    path("admin/export/", booking_export, name="booking-export"),
 ]
