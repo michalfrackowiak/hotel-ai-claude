@@ -17,6 +17,7 @@ from .views import (
     RoomTypeListView,
     booking_admin,
     booking_export,
+    booking_calendar_feed,
 )
 
 app_name = "bookings"
@@ -36,4 +37,5 @@ urlpatterns = [
     path("pricing/", PricingView.as_view(), name="pricing"),
     path("admin/", booking_admin, name="booking-admin"),
     path("admin/export/", booking_export, name="booking-export"),
+    path("feed/", booking_calendar_feed, name="calendar-feed"),
 ]
