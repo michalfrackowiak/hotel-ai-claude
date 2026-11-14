@@ -18,6 +18,7 @@ from .views import (
     booking_admin,
     booking_export,
     booking_calendar_feed,
+    RoomBulkUpdateView,
 )
 
 app_name = "bookings"
@@ -25,6 +26,7 @@ app_name = "bookings"
 urlpatterns = [
     path("room-types/", RoomTypeListView.as_view(), name="room-types"),
     path("rooms/", RoomListView.as_view(), name="rooms"),
+    path("rooms/bulk-update/", RoomBulkUpdateView.as_view(), name="rooms-bulk-update"),
     path("clients/", ClientListCreateView.as_view(), name="clients"),
     path("bookings/", BookingListView.as_view(), name="booking-list"),
     path("bookings/<int:pk>/", BookingRetrieveUpdateView.as_view(), name="booking-detail"),
