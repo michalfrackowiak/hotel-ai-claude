@@ -6,7 +6,7 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
-from django.http import HttpResponseBadRequest, JsonResponse
+from django.http import HttpResponseBadRequest, JsonResponse, StreamingHttpResponse
 from django.shortcuts import render
 from rest_framework import status
 import json as _json
@@ -15,6 +15,8 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import generics
+import threading
+import time
 
 from .models import Booking, BookingLog, BookingStatus, Client, Room, RoomType
 from .serializers import (
@@ -465,6 +467,73 @@ def booking_calendar_feed(request):
     response = HttpResponse(body, content_type="text/calendar; charset=utf-8")
     response["Content-Disposition"] = 'attachment; filename="hotel-aurora-calendar.ics"'
     return response
+
+
+class AvailabilityStreamView(APIView):
+    """SSE stream that emits availability updates on booking changes."""
+
+    permission_classes = [AllowAny]
+
+    _last_count: int = -1
+    _lock = threading.Lock()
+    _event_queue: list = []
+    _watcher_thread: threading.Thread | None = None
+    _running = False
+
+    @classmethod
+    def _emit(cls, data: dict):
+        with cls._lock:
+            cls._event_queue.append(data)
+
+    @classmethod
+    def _poll_loop(cls):
+        last_count = -1
+        while cls._running:
+            time.sleep(2)
+            try:
+                active = (
+                    Booking.objects.exclude(status=BookingStatus.CANCELLED)
+                    .count()
+                )
+            except Exception:  # noqa: BLE001
+                continue
+            if active != last_count:
+                last_count = active
+                cls._emit({
+                    "type": "availability_update",
+                    "active_bookings": active,
+                })
+
+    @classmethod
+    def ensure_watcher(cls):
+        if cls._watcher_thread is None or not cls._watcher_thread.is_alive():
+            cls._running = True
+            cls._watcher_thread = threading.Thread(
+                target=cls._poll_loop, daemon=True
+            )
+            cls._watcher_thread.start()
+
+    def get(self, request):
+        self.ensure_watcher()
+
+        def event_stream():
+            event_id = 0
+            while True:
+                with self._lock:
+                    while self._event_queue:
+                        event = self._event_queue.pop(0)
+                        event_id += 1
+                        yield f"id: {event_id}\n"
+                        yield f"data: {_json.dumps(event)}\n\n"
+                time.sleep(0.5)
+
+        response = StreamingHttpResponse(
+            event_stream(),
+            content_type="text/event-stream",
+        )
+        response["Cache-Control"] = "no-cache"
+        response["X-Accel-Buffering"] = "no"
+        return response
 
 
 class RoomBulkUpdateView(APIView):

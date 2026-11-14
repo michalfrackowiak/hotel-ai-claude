@@ -761,3 +761,50 @@ def test_booking_activity_api_404_for_missing_booking(client):
     resp = client.get("/api/bookings/99999/activity/")
     assert resp.status_code == 404
     assert resp.json()["detail"] == "Booking not found"
+
+
+@pytest.mark.django_db
+def test_availability_stream_returns_sse_content_type(client):
+    """The stream endpoint returns text/event-stream content type."""
+    rt, room = _make_room_pair("Single")
+    resp = client.get("/api/availability/stream/")
+    assert resp.status_code == 200
+    assert "text/event-stream" in resp["Content-Type"]
+    assert "no-cache" in resp["Cache-Control"]
+    assert resp["X-Accel-Buffering"] == "no"
+
+
+@pytest.mark.django_db
+def test_availability_stream_generates_sse_format(client):
+    """The stream generator yields proper SSE frames."""
+    from hotel_ai.bookings.views import AvailabilityStreamView
+    import io
+
+    # Manually add an event to the queue
+    with AvailabilityStreamView._lock:
+        AvailabilityStreamView._event_queue.append({"type": "test"})
+
+    resp = client.get("/api/availability/stream/")
+
+    # Consume a bounded number of chunks from the streaming generator
+    chunks = []
+    for chunk in resp.streaming_content:
+        chunks.append(chunk)
+        if b"test" in chunk:
+            break
+
+    assert len(chunks) > 0
+    combined = b"".join(chunks).decode("utf-8")
+    assert "test" in combined
+
+
+@pytest.mark.django_db
+def test_availability_stream_class_attributes(client):
+    """AvailabilityStreamView has the expected class-level attributes."""
+    from hotel_ai.bookings.views import AvailabilityStreamView
+
+    assert hasattr(AvailabilityStreamView, "_event_queue")
+    assert hasattr(AvailabilityStreamView, "_lock")
+    assert hasattr(AvailabilityStreamView, "_poll_loop")
+    assert hasattr(AvailabilityStreamView, "ensure_watcher")
+    assert hasattr(AvailabilityStreamView, "get")
