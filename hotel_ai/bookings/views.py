@@ -63,6 +63,21 @@ class BookingRetrieveUpdateView(generics.RetrieveUpdateAPIView):
     queryset = Booking.objects.select_related("room", "client", "pricing_rule")
 
 
+class BookingLookupView(APIView):
+    """Return a single booking by its integer pk (read-only)."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request, pk):
+        try:
+            booking = Booking.objects.select_related(
+                "room", "room__room_type", "client", "pricing_rule"
+            ).get(pk=pk)
+        except Booking.DoesNotExist:
+            return JsonResponse({"detail": "Booking not found"}, status=404)
+        return JsonResponse(BookingSerializer(booking).data)
+
+
 class AvailabilityView(APIView):
     """GET/POST availability summary for a date range."""
 
