@@ -442,3 +442,50 @@ def booking_calendar_feed(request):
     response = HttpResponse(body, content_type="text/calendar; charset=utf-8")
     response["Content-Disposition"] = 'attachment; filename="hotel-aurora-calendar.ics"'
     return response
+
+
+class RoomBulkUpdateView(APIView):
+    """PATCH bulk-update room properties (room_number, floor, is_active)."""
+
+    permission_classes = [AllowAny]
+
+    def patch(self, request):
+        rooms_data = request.data
+        if isinstance(rooms_data, dict):
+            rooms_data = [rooms_data]
+        if not isinstance(rooms_data, list):
+            return JsonResponse({"detail": "Expected a list or object"}, status=400)
+
+        updated = []
+        errors = []
+        for item in rooms_data:
+            pk = item.get("id")
+            if pk is None:
+                errors.append({"id": None, "error": "Missing 'id'"})
+                continue
+            try:
+                room = Room.objects.select_for_update().get(pk=pk)
+            except Room.DoesNotExist:
+                errors.append({"id": pk, "error": "Room not found"})
+                continue
+            if "room_number" in item:
+                existing = Room.objects.filter(
+                    room_number=item["room_number"], is_active=True
+                ).exclude(pk=pk)
+                if existing.exists():
+                    errors.append({"id": pk, "error": f"Room number '{item['room_number']}' already in use"})
+                    continue
+                room.room_number = item["room_number"]
+            if "floor" in item:
+                room.floor = int(item["floor"])
+            if "is_active" in item:
+                room.is_active = bool(item["is_active"])
+            room.save()
+            updated.append(room)
+
+        result = {
+            "updated": [{"id": r.id, "room_number": r.room_number, "floor": r.floor, "is_active": r.is_active} for r in updated],
+            "errors": errors,
+        }
+        status_code = 200 if not errors else 207
+        return JsonResponse(result, status=status_code)

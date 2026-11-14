@@ -559,3 +559,84 @@ def test_calendar_feed_ics_structure(client):
     assert f"UID:{b.id}@hotel-aurora.local" in body
     assert "SUMMARY:Test User - Room " in body
     assert "DESCRIPTION:Booking #" in body
+
+
+# ---------------------------------------------------------------------------
+# Room bulk update
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_room_bulk_update_updates_fields(client):
+    """Bulk PATCH should update room_number, floor and is_active."""
+    rt = RoomType.objects.create(name="TestSingle", base_price_per_night=100, capacity=1)
+    room = Room.objects.create(room_number="A01", room_type=rt, floor=1)
+
+    resp = client.patch(
+        "/api/rooms/bulk-update/",
+        [{"id": room.id, "room_number": "B02", "floor": 3, "is_active": False}],
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["updated"] == [
+        {"id": room.id, "room_number": "B02", "floor": 3, "is_active": False}
+    ]
+    assert data["errors"] == []
+    room.refresh_from_db()
+    assert room.room_number == "B02"
+    assert room.floor == 3
+    assert not room.is_active
+
+
+@pytest.mark.django_db
+def test_room_bulk_update_partial_fields(client):
+    """Only provided fields should be updated; others preserved."""
+    rt = RoomType.objects.create(name="Double", base_price_per_night=200, capacity=2)
+    room = Room.objects.create(room_number="D100", room_type=rt, floor=5, is_active=True)
+
+    resp = client.patch(
+        "/api/rooms/bulk-update/",
+        [{"id": room.id, "floor": 7}],
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    room.refresh_from_db()
+    assert room.floor == 7
+    assert room.room_number == "D100"   # unchanged
+    assert room.is_active                # unchanged
+
+
+@pytest.mark.django_db
+def test_room_bulk_update_duplicate_room_number_conflict(client):
+    """Two rooms with the same number must return an error."""
+    rt = RoomType.objects.create(name="Suite", base_price_per_night=500, capacity=4)
+    r1 = Room.objects.create(room_number="S01", room_type=rt, floor=1)
+    r2 = Room.objects.create(room_number="S02", room_type=rt, floor=2)
+
+    resp = client.patch(
+        "/api/rooms/bulk-update/",
+        [{"id": r1.id, "room_number": "S02"}],
+        content_type="application/json",
+    )
+    # Should report the conflict but still process other items
+    assert resp.status_code == 207  # Multi-Status on partial failure
+    data = resp.json()
+    assert any(e.get("error") for e in data["errors"])
+    assert len(data["updated"]) == 0
+
+
+@pytest.mark.django_db
+def test_room_bulk_update_single_dict_format(client):
+    """Accepting a single dict (not wrapped in a list) is supported."""
+    rt = RoomType.objects.create(name="Single", base_price_per_night=150, capacity=1)
+    room = Room.objects.create(room_number="101", room_type=rt, floor=1)
+
+    resp = client.patch(
+        "/api/rooms/bulk-update/",
+        {"id": room.id, "is_active": False},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    room.refresh_from_db()
+    assert not room.is_active
