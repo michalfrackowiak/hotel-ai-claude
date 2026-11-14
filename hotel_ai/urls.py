@@ -6,7 +6,7 @@ from django.http import JsonResponse
 from django.shortcuts import render
 from django.urls import include, path
 
-from hotel_ai.bookings.models import Booking, RoomType, Room
+from hotel_ai.bookings.models import Booking, BookingLog, RoomType, Room
 
 
 def health(request):
@@ -73,6 +73,12 @@ def dashboard(request):
             "occupancy_pct": occupancy_pct,
         })
 
+    # Booking activity timeline (recent status changes across all bookings)
+    recent_activity = (
+        BookingLog.objects.select_related("booking", "booking__client", "booking__room")
+        .order_by("-created_at")[:25]
+    )
+
     pl = language == "pl"
     return render(request, "dashboard/index.html", {
         "language": language,
@@ -85,6 +91,7 @@ def dashboard(request):
         "room_stats": room_stats,
         "arrivals": arrivals,
         "departures": departures,
+        "recent_activity": recent_activity,
     })
 
 
