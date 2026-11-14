@@ -30,6 +30,8 @@ from .services import (
     availability_summary,
     calculate_total,
     cancel_booking,
+    check_in_booking,
+    check_out_booking,
     create_booking,
     effective_price,
     find_available_rooms,
@@ -237,4 +239,48 @@ class BookingCancelView(APIView):
         return JsonResponse({
             "booking": BookingSerializer(booking).data,
             "message": f"Booking {booking.id} cancelled.",
+        })
+
+
+class BookingCheckInView(APIView):
+    """Check in a confirmed booking."""
+
+    permission_classes = [AllowAny]
+
+    def post(self, request, pk):
+        try:
+            booking = Booking.objects.select_related(
+                "room", "room__room_type", "client", "pricing_rule"
+            ).get(pk=pk)
+        except Booking.DoesNotExist:
+            return JsonResponse({"detail": "Booking not found"}, status=404)
+        try:
+            booking = check_in_booking(booking)
+        except ValueError as exc:
+            return JsonResponse({"detail": str(exc)}, status=400)
+        return JsonResponse({
+            "booking": BookingSerializer(booking).data,
+            "message": f"Booking {booking.id} checked in.",
+        })
+
+
+class BookingCheckoutView(APIView):
+    """Check out a checked-in booking."""
+
+    permission_classes = [AllowAny]
+
+    def post(self, request, pk):
+        try:
+            booking = Booking.objects.select_related(
+                "room", "room__room_type", "client", "pricing_rule"
+            ).get(pk=pk)
+        except Booking.DoesNotExist:
+            return JsonResponse({"detail": "Booking not found"}, status=404)
+        try:
+            booking = check_out_booking(booking)
+        except ValueError as exc:
+            return JsonResponse({"detail": str(exc)}, status=400)
+        return JsonResponse({
+            "booking": BookingSerializer(booking).data,
+            "message": f"Booking {booking.id} checked out.",
         })

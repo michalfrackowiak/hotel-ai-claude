@@ -9,10 +9,13 @@ from decimal import Decimal
 
 import pytest
 
-from hotel_ai.bookings.models import Booking, Client, PricingRule, Room, RoomType
+from hotel_ai.bookings.models import Booking, BookingStatus, Client, PricingRule, Room, RoomType
 from hotel_ai.bookings.services import (
     availability_summary,
     calculate_total,
+    cancel_booking,
+    check_in_booking,
+    check_out_booking,
     create_booking,
     find_available_rooms,
     overlapping_bookings,
@@ -338,3 +341,84 @@ def test_api_booking_polish_language_stored(client):
     assert resp.status_code == 201
     data = resp.json()
     assert data["booking"]["client_name"] == "Jan Kowalski"
+
+
+@pytest.mark.django_db
+def test_booking_lifecycle_service():
+    rt, room = _make_room_pair("Single")
+    client = Client.objects.create(first_name="Maja", last_name="Nowak", email="maja@example.com")
+    booking = create_booking(
+        room=room,
+        client=client,
+        check_in=_dt.date(2027, 9, 1),
+        check_out=_dt.date(2027, 9, 3),
+        guests=1,
+    )
+    assert booking.status == BookingStatus.CONFIRMED
+
+    checked = check_in_booking(booking)
+    assert checked.status == BookingStatus.CHECKED_IN
+
+    checked_out = check_out_booking(checked)
+    assert checked_out.status == BookingStatus.CHECKED_OUT
+
+    cancelled = cancel_booking(checked_out)
+    assert cancelled.status == BookingStatus.CANCELLED
+    # Idempotent cancel after checkout is a no-op
+    cancelled2 = cancel_booking(cancelled)
+    assert cancelled2.status == BookingStatus.CANCELLED
+
+
+@pytest.mark.django_db
+def test_check_in_requires_confirmed(client):
+    rt, room = _make_room_pair("Single")
+    booking = create_booking(
+        room=room,
+        client=Client.objects.create(first_name="Zosia", email="z@test.com"),
+        check_in=_dt.date(2027, 8, 1),
+        check_out=_dt.date(2027, 8, 2),
+        guests=1,
+    )
+    cancel_booking(booking)
+    assert booking.status == BookingStatus.CANCELLED
+    resp = client.post(f"/api/bookings/{booking.id}/check-in/")
+    assert resp.status_code == 400
+
+
+@pytest.mark.django_db
+def test_check_out_requires_checked_in(client):
+    rt, room = _make_room_pair("Single")
+    booking = create_booking(
+        room=room,
+        client=Client.objects.create(first_name="Piotr", email="p@test.com"),
+        check_in=_dt.date(2027, 8, 1),
+        check_out=_dt.date(2027, 8, 2),
+        guests=1,
+    )
+    resp = client.post(f"/api/bookings/{booking.id}/check-out/")
+    assert resp.status_code == 400
+
+
+@pytest.mark.django_db
+def test_api_full_lifecycle(client):
+    rt, room = _make_room_pair("Single")
+    payload = {
+        "room_type": rt.name,
+        "room_number": room.room_number,
+        "check_in": "2026-09-15",
+        "check_out": "2026-09-17",
+        "guests": 1,
+        "first_name": "Ewa",
+        "email": "ewa@example.com",
+    }
+    resp = client.post("/api/bookings/create/", json.dumps(payload), content_type="application/json")
+    assert resp.status_code == 201
+    bid = resp.json()["booking"]["id"]
+
+    resp = client.post(f"/api/bookings/{bid}/check-in/")
+    assert resp.status_code == 200
+    assert resp.json()["booking"]["status"] == "checked_in"
+
+    resp = client.post(f"/api/bookings/{bid}/check-out/")
+    assert resp.status_code == 200
+    assert resp.json()["booking"]["status"] == "checked_out"

@@ -198,6 +198,24 @@ def create_booking(
     return booking
 
 
+def check_in_booking(booking: Booking) -> Booking:
+    """Mark an existing confirmed booking as checked in."""
+    if booking.status != BookingStatus.CONFIRMED:
+        raise ValueError(f"Booking {booking.id} is {booking.status}, expected confirmed")
+    booking.status = BookingStatus.CHECKED_IN
+    booking.save()
+    return booking
+
+
+def check_out_booking(booking: Booking) -> Booking:
+    """Mark a checked-in booking as checked out."""
+    if booking.status != BookingStatus.CHECKED_IN:
+        raise ValueError(f"Booking {booking.id} is {booking.status}, expected checked_in")
+    booking.status = BookingStatus.CHECKED_OUT
+    booking.save()
+    return booking
+
+
 def cancel_booking(booking: Booking) -> Booking:
     """Cancel a booking (idempotent) and sync the cancellation to the calendar."""
     if booking.status != BookingStatus.CANCELLED:
@@ -233,6 +251,8 @@ __all__ = [
     "find_available_rooms",
     "availability_summary",
     "create_booking",
+    "check_in_booking",
+    "check_out_booking",
     "cancel_booking",
     "parse_date",
     "today",
