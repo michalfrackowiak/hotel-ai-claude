@@ -20,8 +20,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . /app
 
-RUN python manage.py collectstatic --no-input --clear 2>/dev/null || true
+# Migrations + seed providers run at container start so every new container
+# brings itself up to date regardless of image age. Skips are exposed via
+# env vars (e.g. SKIP_MIGRATIONS=1 for dev overrides).
+RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 8000
 
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "3", "--threads", "4", "hotel_ai.wsgi:application"]
