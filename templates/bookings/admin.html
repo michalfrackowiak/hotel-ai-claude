@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Booking Admin · Hotel Aurora</title>
+<style>
+:root { --primary:#1a73e8; --green:#34a853; --red:#ea4335; --orange:#fa9c33; --purple:#9b59b6; --gray:#5f6368; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: system-ui, sans-serif; background:#f5f7fa; color:#202124; }
+.header { background:var(--primary); color:white; padding:.875rem 2rem; display:flex; align-items:center; gap:1rem; }
+.header h1 { font-size:1.25rem; }
+.header a { color:white; text-decoration:none; border:1px solid rgba(255,255,255,.5); border-radius:6px; padding:.25rem .75rem; font-size:.875rem; }
+.header a:hover { background:rgba(255,255,255,.15); }
+.controls { background:white; border-bottom:1px solid #dadce0; padding:1rem 2rem; display:flex; flex-wrap:wrap; gap:.75rem; align-items:center; }
+.controls input, .controls select { padding:.5rem .75rem; border:1px solid #dadce0; border-radius:6px; font-size:.875rem; }
+.controls button { padding:.5rem 1rem; background:var(--primary); color:white; border:none; border-radius:6px; cursor:pointer; font-size:.875rem; }
+.controls button:hover { background:#1557b0; }
+.stats { padding:1rem 2rem; display:flex; gap:1rem; flex-wrap:wrap; }
+.stat-card { background:white; border-radius:8px; padding:.75rem 1.25rem; min-width:120px; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,.1); }
+.stat-card .num { font-size:1.75rem; font-weight:700; }
+.stat-card .label { font-size:.75rem; color:var(--gray); text-transform:uppercase; }
+.table-wrap { padding:.5rem 2rem 2rem; }
+table { width:100%; background:white; border-radius:8px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,.1); border-collapse:collapse; }
+th { background:#f1f3f4; padding:.75rem 1rem; text-align:left; font-size:.8rem; text-transform:uppercase; color:var(--gray); }
+td { padding:.625rem 1rem; border-top:1px solid #eee; font-size:.875rem; vertical-align:middle; }
+tr:hover td { background:#f8f9fa; }
+.status { display:inline-block; padding:.2rem .5rem; border-radius:12px; font-size:.75rem; font-weight:600; }
+.s-confirmed { background:#e8f5e9; color:#2e7d32; }
+.s-checked_in { background:#fff3e0; color:#e65100; }
+.s-checked_out { background:#e3f2fd; color:#1565c0; }
+.s-cancelled { background:#fce4ec; color:#c62828; }
+.s-pending { background:#f3e5f5; color:#6a1b9a; }
+.actions a, .actions form { display:inline-block; margin-right:.25rem; }
+.actions a.btn-ci { background:var(--orange); color:white; border-radius:4px; padding:.25rem .5rem; text-decoration:none; font-size:.75rem; }
+.actions a.btn-co { background:var(--green); color:white; border-radius:4px; padding:.25rem .5rem; text-decoration:none; font-size:.75rem; }
+.actions a.btn-ca { background:var(--red); color:white; border-radius:4px; padding:.25rem .5rem; text-decoration:none; font-size:.75rem; }
+.empty { padding:2rem; text-align:center; color:var(--gray); }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🏨 Booking Management</h1>
+  <a href="/admin/">← Django Admin</a>
+  <a href="/">← Home</a>
+</div>
+<div class="controls">
+  <input type="text" name="search" placeholder="Search name/email..." value="{{ filters.search }}" style="width:200px;">
+  <select name="status">
+    <option value="" {% if not filters.status %}selected{% endif %}>All Status</option>
+    <option value="confirmed" {% if filters.status == "confirmed" %}selected{% endif %}>Confirmed</option>
+    <option value="checked_in" {% if filters.status == "checked_in" %}selected{% endif %}>Checked In</option>
+    <option value="checked_out" {% if filters.status == "checked_out" %}selected{% endif %}>Checked Out</option>
+    <option value="cancelled" {% if filters.status == "cancelled" %}selected{% endif %}>Cancelled</option>
+  </select>
+  <select name="room_type">
+    <option value="" {% if not filters.room_type %}selected{% endif %}>All Room Types</option>
+    {% for rt in room_types %}<option value="{{ rt }}" {% if filters.room_type == rt %}selected{% endif %}>{{ rt }}</option>{% endfor %}
+  </select>
+  <input type="date" name="check_in_from" placeholder="From" value="{{ filters.check_in_from }}">
+  <input type="date" name="check_in_to" placeholder="To" value="{{ filters.check_in_to }}">
+  <button type="submit" form="f">Filter</button>
+  <form id="f" method="get" action="{% url 'bookings:booking-admin' %}">
+    <a href="{% url 'bookings:booking-admin' %}" style="margin-left:auto;padding:.5rem 1rem;background:#607d8b;color:white;border-radius:6px;text-decoration:none;font-size:.875rem;">Reset</a>
+  </form>
+</div>
+<div class="stats">
+  <div class="stat-card"><div class="num">{{ bookings|length }}</div><div class="label">Showing</div></div>
+  <div class="stat-card"><div class="num">{{ total }}</div><div class="label">Total</div></div>
+</div>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+  <th>ID</th><th>Client</th><th>Email</th><th>Room</th><th>Type</th>
+  <th>Check-in</th><th>Check-out</th><th>Nights</th><th>Total</th><th>Status</th><th>Source</th><th>Actions</th>
+</tr>
+</thead>
+<tbody>
+{% for b in bookings %}
+<tr>
+  <td><strong>{{ b.id }}</strong></td>
+  <td>{{ b.client.full_name }}</td>
+  <td>{{ b.client.email }}</td>
+  <td>{{ b.room.room_number }}</td>
+  <td>{{ b.room.room_type.name }}</td>
+  <td>{{ b.check_in|date:"Y-m-d" }}</td>
+  <td>{{ b.check_out|date:"Y-m-d" }}</td>
+  <td>{{ b.nights }}</td>
+  <td>{{ b.total_price }} {{ b.currency }}</td>
+  <td><span class="status s-{{ b.status }}">{{ b.get_status_display }}</span></td>
+  <td>{{ b.source }}</td>
+  <td class="actions">
+    {% if b.status == 'confirmed' %}
+      <a class="btn-ci" href="{% url 'bookings:booking-check-in' b.id %}">Check In</a>
+    {% elif b.status == 'checked_in' %}
+      <a class="btn-co" href="{% url 'bookings:booking-check-out' b.id %}">Check Out</a>
+    {% endif %}
+    {% if b.status != 'cancelled' and b.status != 'checked_out' %}
+      <a class="btn-ca" href="{% url 'bookings:booking-cancel' b.id %}" onclick="return confirm('Cancel this booking?')">Cancel</a>
+    {% endif %}
+  </td>
+</tr>
+{% empty %}
+<tr><td colspan="12" class="empty">No bookings found.</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+</body>
+</html>
