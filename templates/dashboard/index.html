@@ -114,6 +114,25 @@ tr:hover td { background:#f8f9fa; }
     </tbody>
   </table>
 </div>
+<div class="section" style="margin-top:1.5rem">
+  <h2>{% if language == 'pl' %}Ostatnia aktywność{% else %}Recent Activity{% endif %}</h2>
+  <table>
+    <thead><tr><th>{% if language == 'pl' %}Czas{% else %}When{% endif %}</th><th>{% if language == 'pl' %}Pokój{% else %}Room{% endif %}</th><th>{% if language == 'pl' %}Gość{% else %}Guest{% endif %}</th><th>{% if language == 'pl' %}Akcja{% else %}Action{% endif %}</th><th>{% if language == 'pl' %}Uwagi{% else %}Notes{% endif %}</th></tr></thead>
+    <tbody>
+    {% for log in recent_activity %}
+    <tr>
+      <td>{{ log.created_at|date:"M d H:i" }}</td>
+      <td>{{ log.booking.room.room_number }}</td>
+      <td>{{ log.booking.client.full_name }}</td>
+      <td><span class="badge arrival">{{ log.action }}</span></td>
+      <td>{{ log.notes|default:"—" }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5" class="empty">{% if language == 'pl' %}Brak aktywności.{% else %}No activity yet.{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
 <script>
 const picker = document.getElementById('datePicker');
 picker.addEventListener('change', () => window.location.href = '?date=' + picker.value);

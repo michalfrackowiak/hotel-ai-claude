@@ -448,6 +448,45 @@ def test_booking_admin_staff_only(client, db):
 
 
 # ---------------------------------------------------------------------------
+# Dashboard
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_dashboard_renders_activity_timeline(client):
+    """The dashboard shows the recent booking activity timeline."""
+    from django.contrib.auth.models import User
+
+    user = User.objects.create_user(username="dashuser", password="dashpass")
+    client.login(username="dashuser", password="dashpass")
+    resp = client.get("/dashboard/")
+    assert resp.status_code == 200
+    assert b"Recent Activity" in resp.content
+
+
+@pytest.mark.django_db
+def test_dashboard_activity_timeline_shows_log_entries(client):
+    """Log entries created by the service layer appear in the timeline."""
+    import datetime as _dt
+    from django.contrib.auth.models import User
+
+    user = User.objects.create_user(username="dashuser2", password="dashpass")
+    client.login(username="dashuser2", password="dashpass")
+
+    rt, room = _make_room_pair("Single")
+    guest = Client.objects.create(first_name="Dash", last_name="User", email="d@example.com")
+    create_booking(
+        room=room, client=guest, check_in=_dt.date(2026, 7, 1), check_out=_dt.date(2026, 7, 3)
+    )
+
+    resp = client.get("/dashboard/")
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert "Dash User" in body
+    assert "created" in body
+
+
+# ---------------------------------------------------------------------------
 # iCal calendar feed
 # ---------------------------------------------------------------------------
 
