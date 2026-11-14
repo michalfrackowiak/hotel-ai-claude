@@ -422,3 +422,26 @@ def test_api_full_lifecycle(client):
     resp = client.post(f"/api/bookings/{bid}/check-out/")
     assert resp.status_code == 200
     assert resp.json()["booking"]["status"] == "checked_out"
+
+@pytest.mark.django_db
+def test_booking_admin_requires_login(client):
+    """Admin page should redirect to login for non-authenticated users."""
+    resp = client.get("/api/admin/")
+    assert resp.status_code in (302, 403)
+
+
+@pytest.mark.django_db
+def test_booking_admin_staff_only(client, db):
+    from django.contrib.auth.models import User
+    # Non-staff user should get 403
+    user = User.objects.create_user(username="testuser", password="testpass")
+    client.login(username="testuser", password="testpass")
+    resp = client.get("/api/admin/")
+    assert resp.status_code == 403
+
+    # Staff user should get the page
+    user.is_staff = True
+    user.save()
+    resp = client.get("/api/admin/")
+    assert resp.status_code == 200
+    assert b"Booking Management" in resp.content

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from rest_framework import status
-import json as _json
-
+from django.contrib.admin.views.decorators import staff_member_required
+from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.http import HttpResponseBadRequest, JsonResponse
+from django.shortcuts import render
+from rest_framework import status
+import json as _json
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -284,3 +286,50 @@ class BookingCheckoutView(APIView):
             "booking": BookingSerializer(booking).data,
             "message": f"Booking {booking.id} checked out.",
         })
+
+
+@login_required
+def booking_admin(request):
+    """Admin booking management page with filtering."""
+    if not request.user.is_staff:
+        return JsonResponse({"detail": "Staff access required."}, status=403)
+
+    qs = Booking.objects.select_related("room", "room__room_type", "client").order_by("-check_in")
+
+    status_filter = request.GET.get("status", "")
+    room_type = request.GET.get("room_type", "")
+    search = request.GET.get("search", "").strip()
+    check_in_from = request.GET.get("check_in_from", "")
+    check_in_to = request.GET.get("check_in_to", "")
+
+    if status_filter and status_filter != "all":
+        qs = qs.filter(status=status_filter)
+    if room_type:
+        qs = qs.filter(room__room_type__name=room_type)
+    if search:
+        from django.db.models import Q
+        qs = qs.filter(
+            Q(client__first_name__icontains=search)
+            | Q(client__last_name__icontains=search)
+            | Q(client__email__icontains=search)
+        )
+    if check_in_from:
+        qs = qs.filter(check_in__gte=check_in_from)
+    if check_in_to:
+        qs = qs.filter(check_in__lte=check_in_to)
+
+    room_types = list(RoomType.objects.values_list("name", flat=True))
+    total = qs.count()
+
+    return render(request, "bookings/admin.html", {
+        "bookings": qs,
+        "total": total,
+        "room_types": room_types,
+        "filters": {
+            "status": status_filter,
+            "room_type": room_type,
+            "search": search,
+            "check_in_from": check_in_from,
+            "check_in_to": check_in_to,
+        },
+    })
