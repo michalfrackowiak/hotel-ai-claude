@@ -390,3 +390,55 @@ def booking_export(request):
         ])
 
     return response
+
+
+def booking_calendar_feed(request):
+    """Return all active bookings as an iCal (.ics) calendar feed."""
+    import datetime as _dt
+
+    from django.http import HttpResponse
+
+    now_utc = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+    qs = (
+        Booking.objects.select_related("room", "client")
+        .filter(
+            status__in=[BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN]
+        )
+        .order_by("check_in")
+    )
+
+    events = ""
+    for b in qs:
+        summary = f"{b.client.full_name} - Room {b.room.room_number}"
+        description_lines = [f"Booking #{b.id}"]
+        if b.total_price:
+            description_lines.append(f"Total: {b.total_price} {b.currency}")
+        if b.client.email:
+            description_lines.append(f"Guest: {b.client.email}")
+        description = "\\n".join(description_lines)
+        events += (
+            f"BEGIN:VEVENT\r\n"
+            f"UID:{b.id}@hotel-aurora.local\r\n"
+            f"DTSTAMP:{now_utc}\r\n"
+            f"DTSTART:{b.check_in.strftime('%Y%m%d')}\r\n"
+            f"DTEND:{b.check_out.strftime('%Y%m%d')}\r\n"
+            f"SUMMARY:{summary}\r\n"
+            f"DESCRIPTION:{description}\r\n"
+            f"STATUS:CONFIRMED\r\n"
+            f"END:VEVENT\r\n"
+        )
+
+    body = (
+        "BEGIN:VCALENDAR\r\n"
+        "VERSION:2.0\r\n"
+        "PRODID:-//Hotel Aurora//EN\r\n"
+        "CALSCALE:GREGORIAN\r\n"
+        "METHOD:PUBLISH\r\n"
+        f"\r\n{events}"
+        "END:VCALENDAR\r\n"
+    )
+
+    response = HttpResponse(body, content_type="text/calendar; charset=utf-8")
+    response["Content-Disposition"] = 'attachment; filename="hotel-aurora-calendar.ics"'
+    return response

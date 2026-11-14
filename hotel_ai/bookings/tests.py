@@ -445,3 +445,117 @@ def test_booking_admin_staff_only(client, db):
     resp = client.get("/api/admin/")
     assert resp.status_code == 200
     assert b"Booking Management" in resp.content
+
+
+# ---------------------------------------------------------------------------
+# iCal calendar feed
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_calendar_feed_excludes_cancelled(client):
+    """Cancelled bookings must not appear in the .ics feed."""
+    rt, room = _make_room_pair("Single")
+    client_obj = Client.objects.create(
+        first_name="Cancelled", last_name="Guest", email="c@x.com"
+    )
+    b = create_booking(
+        room=room,
+        client=client_obj,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+    )
+    cancel_booking(b)
+
+    resp = client.get("/api/feed/")
+    assert resp.status_code == 200
+    assert f"{b.id}@hotel-aurora.local".encode() not in resp.content
+
+
+@pytest.mark.django_db
+def test_calendar_feed_excludes_checked_out(client):
+    """Checked-out bookings must not appear in the .ics feed."""
+    rt, room = _make_room_pair("Single")
+    client_obj = Client.objects.create(
+        first_name="Checked", last_name="Out", email="co@x.com"
+    )
+    b = create_booking(
+        room=room,
+        client=client_obj,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+    )
+    check_in_booking(b)
+    check_out_booking(b)
+
+    resp = client.get("/api/feed/")
+    assert resp.status_code == 200
+    assert f"{b.id}@hotel-aurora.local".encode() not in resp.content
+
+
+@pytest.mark.django_db
+def test_calendar_feed_includes_confirmed_and_checked_in(client):
+    """Confirmed and checked-in bookings must appear in the .ics feed."""
+    rt, room = _make_room_pair("Single")
+    c1 = Client.objects.create(first_name="Ada", last_name="L", email="ada@x.com")
+    c2 = Client.objects.create(first_name="Bob", last_name="B", email="bob@x.com")
+
+    b1 = create_booking(
+        room=room,
+        client=c1,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+    )
+    b2 = create_booking(
+        room=room,
+        client=c2,
+        check_in=_dt.date(2026, 7, 5),
+        check_out=_dt.date(2026, 7, 7),
+    )
+    check_in_booking(b2)
+
+    resp = client.get("/api/feed/")
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert f"{b1.id}@hotel-aurora.local" in body
+    assert f"{b2.id}@hotel-aurora.local" in body
+    assert "Ada L - Room " in body
+    assert "Bob B - Room " in body
+
+
+@pytest.mark.django_db
+def test_calendar_feed_content_type(client):
+    """Response must be served as text/calendar with the .ics filename."""
+    resp = client.get("/api/feed/")
+    assert resp.status_code == 200
+    assert resp["Content-Type"].startswith("text/calendar")
+    assert "hotel-aurora-calendar.ics" in resp["Content-Disposition"]
+
+
+@pytest.mark.django_db
+def test_calendar_feed_ics_structure(client):
+    """The .ics body must contain valid iCal headers and VEVENT blocks."""
+    rt, room = _make_room_pair("Single")
+    client_obj = Client.objects.create(
+        first_name="Test", last_name="User", email="test@x.com"
+    )
+    b = create_booking(
+        room=room,
+        client=client_obj,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+    )
+
+    resp = client.get("/api/feed/")
+    body = resp.content.decode()
+    assert body.startswith("BEGIN:VCALENDAR\r\n")
+    assert "VERSION:2.0" in body
+    assert "PRODID:-//Hotel Aurora//EN" in body
+    assert "END:VCALENDAR\r\n" in body
+    assert "BEGIN:VEVENT" in body
+    assert "END:VEVENT" in body
+    assert "DTSTART:20260701" in body
+    assert "DTEND:20260703" in body
+    assert f"UID:{b.id}@hotel-aurora.local" in body
+    assert "SUMMARY:Test User - Room " in body
+    assert "DESCRIPTION:Booking #" in body
