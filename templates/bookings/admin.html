@@ -59,6 +59,7 @@ tr:hover td { background:#f8f9fa; }
   <input type="date" name="check_in_from" placeholder="From" value="{{ filters.check_in_from }}">
   <input type="date" name="check_in_to" placeholder="To" value="{{ filters.check_in_to }}">
   <button type="submit" form="f">Filter</button>
+  <a href="{% url 'bookings:booking-export' %}?status={{ filters.status }}&room_type={{ filters.room_type }}&search={{ filters.search }}&check_in_from={{ filters.check_in_from }}&check_in_to={{ filters.check_in_to }}" style="padding:.5rem 1rem;background:#34a853;color:white;border-radius:6px;text-decoration:none;font-size:.875rem;margin-right:.5rem;">Export CSV</a>
   <form id="f" method="get" action="{% url 'bookings:booking-admin' %}">
     <a href="{% url 'bookings:booking-admin' %}" style="margin-left:auto;padding:.5rem 1rem;background:#607d8b;color:white;border-radius:6px;text-decoration:none;font-size:.875rem;">Reset</a>
   </form>
