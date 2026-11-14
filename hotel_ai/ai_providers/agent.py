@@ -19,10 +19,14 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from hotel_ai.bookings.models import RoomType
+from django.db.models import Q
+
+from hotel_ai.bookings.models import Booking, BookingStatus, RoomType
 from hotel_ai.bookings.services import (
     availability_summary,
     calculate_total,
+    check_in_booking,
+    check_out_booking,
     create_booking,
     find_available_rooms,
     resolve_client,
@@ -47,10 +51,15 @@ or, to check availability:
   {{"action": "check_availability", "args": {{"check_in": "YYYY-MM-DD", "check_out": "YYYY-MM-DD", "guests": 2}}}}
 or, to confirm a booking:
   {{"action": "book", "args": {{"room_type": "Double", "check_in": "YYYY-MM-DD", "check_out": "YYYY-MM-DD", "guests": 2, "first_name": "...", "last_name": "...", "email": "...", "phone": "..."}}}}
+or, to check in a guest:
+  {{"action": "check_in", "args": {{"booking_id": 123}}}}
+or, to check out a guest:
+  {{"action": "check_out", "args": {{"booking_id": 123}}}}
 
 Rules:
 - Before booking, you must know: dates, guests, and the guest's name (+ email or phone).
 - Always confirm the details with the guest before the "book" action.
+- Use "booking_id" for check-in / check-out; if the guest only gives a name, ask for the booking id first.
 - If the guest speaks Polish, still reply with JSON but write the text in Polish.
 """
 
@@ -67,6 +76,8 @@ Wzory JSON:
 {{"action":"reply","text":"... twoja odpowiedz po polsku ..."}}
 {{"action":"check_availability","args":{{"check_in":"YYYY-MM-DD","check_out":"YYYY-MM-DD","guests":2}}}}
 {{"action":"book","args":{{"room_type":"Double","check_in":"YYYY-MM-DD","check_out":"YYYY-MM-DD","guests":2,"first_name":"...","last_name":"...","email":"...","phone":"..."}}}}
+{{"action":"check_in","args":{{"booking_id":123}}}}
+{{"action":"check_out","args":{{"booking_id":123}}}}
 
 Zasady biznesowe:
 - Przed rezerwacją musisz znać: daty, liczbę gości, imię i nazwisko gościa (+ e-mail lub telefon).
@@ -168,6 +179,10 @@ class ReservationAgent:
                 outcome = self._run_check_availability(args)
             elif action == "book":
                 outcome = self._run_book(args)
+            elif action == "check_in":
+                outcome = self._run_check_in(args)
+            elif action == "check_out":
+                outcome = self._run_check_out(args)
             else:
                 outcome = f"Unknown action '{action}'."
 
@@ -262,6 +277,77 @@ class ReservationAgent:
             },
             ensure_ascii=False,
         )
+
+    # ------------------------------------------------------------------
+    def _run_check_in(self, args: dict) -> str:
+        booking = self._lookup_booking(args)
+        if isinstance(booking, str):
+            return booking
+        try:
+            booking = check_in_booking(booking)
+        except ValueError as exc:
+            return f"Check-in failed: {exc}"
+        return json.dumps(
+            {
+                "status": booking.status,
+                "booking_id": booking.id,
+                "room": booking.room.room_number,
+                "guest": booking.client.full_name,
+            },
+            ensure_ascii=False,
+        )
+
+    def _run_check_out(self, args: dict) -> str:
+        booking = self._lookup_booking(args)
+        if isinstance(booking, str):
+            return booking
+        try:
+            booking = check_out_booking(booking)
+        except ValueError as exc:
+            return f"Check-out failed: {exc}"
+        return json.dumps(
+            {
+                "status": booking.status,
+                "booking_id": booking.id,
+                "room": booking.room.room_number,
+                "guest": booking.client.full_name,
+            },
+            ensure_ascii=False,
+        )
+
+    def _lookup_booking(self, args: dict):
+        """Resolve a booking by id, or by the guest's name."""
+        booking_id = args.get("booking_id")
+        if booking_id is not None:
+            try:
+                booking_id = int(booking_id)
+            except (TypeError, ValueError):
+                return "Invalid 'booking_id'."
+            try:
+                return Booking.objects.select_related(
+                    "room", "client"
+                ).get(pk=booking_id)
+            except Booking.DoesNotExist:
+                return f"Booking {booking_id} not found."
+        name = (args.get("guest_name") or "").strip()
+        if name:
+            parts = name.split()
+            qs = Booking.objects.select_related("room", "client")
+            if len(parts) == 1:
+                qs = qs.filter(
+                    Q(client__first_name__icontains=parts[0])
+                    | Q(client__last_name__icontains=parts[0])
+                )
+            else:
+                qs = qs.filter(
+                    client__first_name__icontains=parts[0],
+                    client__last_name__icontains=parts[-1],
+                )
+            booking = qs.order_by("-created_at").first()
+            if booking is None:
+                return f"No booking found for '{name}'."
+            return booking
+        return "Missing 'booking_id' or 'guest_name'."
 
     # ------------------------------------------------------------------
     @staticmethod
