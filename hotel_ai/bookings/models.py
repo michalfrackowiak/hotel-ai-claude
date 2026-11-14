@@ -175,3 +175,23 @@ class Booking(models.Model):
             f"{self.room.room_number} {self.client} "
             f"{self.check_in:%Y-%m-%d} -> {self.check_out:%Y-%m-%d} [{self.status}]"
         )
+
+
+class BookingLog(models.Model):
+    """Audit log for every status transition on a booking."""
+
+    action = models.CharField(
+        max_length=32,
+        help_text="e.g. created, confirmed, checked_in, checked_out, cancelled",
+    )
+    booking = models.ForeignKey(
+        Booking, on_delete=models.CASCADE, related_name="logs"
+    )
+    notes = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self) -> str:  # pragma: no cover - trivial
+        return f"#{self.booking_id} → {self.action}"

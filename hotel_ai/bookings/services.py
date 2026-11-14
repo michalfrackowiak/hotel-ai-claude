@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 from .models import (
     Booking,
+    BookingLog,
     BookingStatus,
     Client,
     PricingRule,
@@ -187,6 +188,8 @@ def create_booking(
         notes=notes,
     )
 
+    BookingLog.objects.create(booking=booking, action="created", notes=notes)
+
     # Best-effort push to the room's calendar (no Google creds = skipped).
     try:
         from hotel_ai.calendar_integration.services import sync_booking
@@ -204,6 +207,7 @@ def check_in_booking(booking: Booking) -> Booking:
         raise ValueError(f"Booking {booking.id} is {booking.status}, expected confirmed")
     booking.status = BookingStatus.CHECKED_IN
     booking.save()
+    BookingLog.objects.create(booking=booking, action="checked_in")
     return booking
 
 
@@ -213,6 +217,7 @@ def check_out_booking(booking: Booking) -> Booking:
         raise ValueError(f"Booking {booking.id} is {booking.status}, expected checked_in")
     booking.status = BookingStatus.CHECKED_OUT
     booking.save()
+    BookingLog.objects.create(booking=booking, action="checked_out")
     return booking
 
 
@@ -221,6 +226,7 @@ def cancel_booking(booking: Booking) -> Booking:
     if booking.status != BookingStatus.CANCELLED:
         booking.status = BookingStatus.CANCELLED
         booking.save()
+        BookingLog.objects.create(booking=booking, action="cancelled")
         try:
             from hotel_ai.calendar_integration.services import sync_booking
 

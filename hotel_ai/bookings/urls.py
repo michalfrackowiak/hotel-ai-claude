@@ -4,6 +4,7 @@ from django.urls import path
 
 from .views import (
     AvailabilityView,
+    BookingActivityView,
     BookingCancelView,
     BookingCheckoutView,
     BookingCheckInView,
@@ -40,4 +41,5 @@ urlpatterns = [
     path("admin/", booking_admin, name="booking-admin"),
     path("admin/export/", booking_export, name="booking-export"),
     path("feed/", booking_calendar_feed, name="calendar-feed"),
+    path("bookings/<int:pk>/activity/", BookingActivityView.as_view(), name="booking-activity"),
 ]
