@@ -53,16 +53,51 @@ def dashboard(request):
         check_out=selected_date,
     ).exclude(status="cancelled").select_related("room", "client").order_by("-created_at")[:20]
 
-    # Room type stats
+    # Room type stats & grid
     room_stats = []
+    room_grid = []
     for rt in room_types:
-        rooms = Room.objects.filter(room_type=rt, is_active=True)
-        total = rooms.count()
-        occupied = rooms.filter(
-            bookings__check_in__lte=selected_date,
-            bookings__check_out__gt=selected_date,
-            bookings__status__in=["confirmed", "checked_in"],
-        ).distinct().count()
+        rooms_qs = Room.objects.filter(room_type=rt, is_active=True)
+        total = rooms_qs.count()
+        occupied_ids = set(
+            Booking.objects.filter(
+                room__in=rooms_qs,
+                check_in__lte=selected_date,
+                check_out__gt=selected_date,
+            )
+            .exclude(status="cancelled")
+            .values_list("room_id", flat=True)
+        )
+        room_type_grid = []
+        for r in rooms_qs.order_by("room_number"):
+            is_occupied = r.id in occupied_ids
+            active_booking = None
+            if is_occupied:
+                try:
+                    active_booking = Booking.objects.get(
+                        room=r,
+                        check_in__lte=selected_date,
+                        check_out__gt=selected_date,
+                    )
+                except Booking.DoesNotExist:
+                    pass
+            room_type_grid.append({
+                "id": r.id,
+                "number": r.room_number,
+                "occupied": is_occupied,
+                "status": active_booking.status if active_booking else None,
+                "guest": (
+                    f"{active_booking.client.full_name}" if active_booking and active_booking.client else ""
+                ),
+                "booking_id": active_booking.id if active_booking else None,
+                "check_in": (
+                    active_booking.check_in.isoformat() if active_booking else None
+                ),
+                "check_out": (
+                    active_booking.check_out.isoformat() if active_booking else None
+                ),
+            })
+        occupied = len(occupied_ids)
         available = total - occupied
         occupancy_pct = int((occupied / total * 100) if total > 0 else 0)
         room_stats.append({
@@ -71,6 +106,10 @@ def dashboard(request):
             "available": available,
             "price": str(rt.base_price_per_night),
             "occupancy_pct": occupancy_pct,
+        })
+        room_grid.append({
+            "room_type": rt.name,
+            "rooms": room_type_grid,
         })
 
     pl = language == "pl"
@@ -83,6 +122,7 @@ def dashboard(request):
         "arrived_today": len(arrivals),
         "departing_today": len(departures),
         "room_stats": room_stats,
+        "room_grid": room_grid,
         "arrivals": arrivals,
         "departures": departures,
     })
