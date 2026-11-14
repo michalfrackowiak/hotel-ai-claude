@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from .models import Booking, BookingStatus, Client, PricingRule, Room, RoomType
+from .models import Booking, BookingLog, BookingStatus, Client, PricingRule, Room, RoomType
 from .services import (
     calculate_total,
     effective_price,
@@ -173,12 +173,20 @@ class BookingResponseSerializer(serializers.Serializer):
     message = serializers.CharField()
 
 
+class BookingLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BookingLog
+        fields = ("id", "booking", "action", "notes", "created_at")
+        read_only_fields = ("id", "booking", "created_at")
+
+
 __all__ = [
     "RoomTypeSerializer",
     "RoomSerializer",
     "ClientSerializer",
     "PricingRuleSerializer",
     "BookingSerializer",
+    "BookingLogSerializer",
     "AvailabilityRequestSerializer",
     "AvailabilityResponseSerializer",
     "PricingRequestSerializer",

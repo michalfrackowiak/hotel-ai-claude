@@ -16,10 +16,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import generics
 
-from .models import Booking, BookingStatus, Client, Room, RoomType
+from .models import Booking, BookingLog, BookingStatus, Client, Room, RoomType
 from .serializers import (
     AvailabilityRequestSerializer,
     AvailabilityResponseSerializer,
+    BookingLogSerializer,
     BookingRequestSerializer,
     BookingResponseSerializer,
     BookingSerializer,
@@ -28,6 +29,28 @@ from .serializers import (
     RoomSerializer,
     RoomTypeSerializer,
 )
+
+
+class BookingActivityView(APIView):
+    """Return the activity timeline for a single booking."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request, pk):
+        try:
+            booking = Booking.objects.get(pk=pk)
+        except Booking.DoesNotExist:
+            return JsonResponse({"detail": "Booking not found"}, status=404)
+        logs = (
+            booking.logs.select_related()
+            .values("id", "action", "notes", "created_at")
+            .order_by("created_at")
+        )
+        return JsonResponse({
+            "booking_id": pk,
+            "current_status": booking.status,
+            "activity_log": list(logs),
+        })
 from .services import (
     availability_summary,
     calculate_total,

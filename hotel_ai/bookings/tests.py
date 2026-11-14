@@ -9,7 +9,7 @@ from decimal import Decimal
 
 import pytest
 
-from hotel_ai.bookings.models import Booking, BookingStatus, Client, PricingRule, Room, RoomType
+from hotel_ai.bookings.models import Booking, BookingLog, BookingStatus, Client, PricingRule, Room, RoomType
 from hotel_ai.bookings.services import (
     availability_summary,
     calculate_total,
@@ -640,3 +640,124 @@ def test_room_bulk_update_single_dict_format(client):
     assert resp.status_code == 200
     room.refresh_from_db()
     assert not room.is_active
+
+
+@pytest.mark.django_db
+def test_booking_activity_log_created_on_create(client):
+    """A 'created' log entry is written when a booking is made."""
+    rt, room = _make_room_pair("Single")
+    payload = {
+        "room_type": rt.name,
+        "room_number": room.room_number,
+        "check_in": "2026-07-01",
+        "check_out": "2026-07-03",
+        "guests": 1,
+        "first_name": "Alice",
+        "last_name": "Smith",
+        "notes": "VIP guest",
+    }
+    resp = client.post("/api/bookings/create/", json.dumps(payload), content_type="application/json")
+    assert resp.status_code == 201
+    booking = Booking.objects.get(pk=resp.json()["booking"]["id"])
+    logs = list(booking.logs.all())
+    assert len(logs) == 1
+    assert logs[0].action == "created"
+    assert logs[0].notes == "VIP guest"
+
+
+@pytest.mark.django_db
+def test_booking_activity_log_after_check_in(client):
+    """Checking in appends a 'checked_in' log entry."""
+    rt, room = _make_room_pair("Double")
+    payload = {
+        "room_type": rt.name,
+        "room_number": room.room_number,
+        "check_in": "2026-08-01",
+        "check_out": "2026-08-04",
+        "guests": 2,
+        "first_name": "Bob",
+        "last_name": "Jones",
+    }
+    resp = client.post("/api/bookings/create/", json.dumps(payload), content_type="application/json")
+    booking_id = resp.json()["booking"]["id"]
+    resp2 = client.post(f"/api/bookings/{booking_id}/check-in/")
+    assert resp2.status_code == 200
+    logs = list(Booking.objects.get(pk=booking_id).logs.order_by("created_at"))
+    assert logs[0].action == "created"
+    assert logs[1].action == "checked_in"
+
+
+@pytest.mark.django_db
+def test_booking_activity_log_after_check_out(client):
+    """Checking out appends a 'checked_out' log entry after check-in."""
+    rt, room = _make_room_pair("Single")
+    payload = {
+        "room_type": rt.name,
+        "room_number": room.room_number,
+        "check_in": "2026-09-01",
+        "check_out": "2026-09-03",
+        "guests": 1,
+        "first_name": "Carol",
+        "last_name": "White",
+    }
+    resp = client.post("/api/bookings/create/", json.dumps(payload), content_type="application/json")
+    booking_id = resp.json()["booking"]["id"]
+    client.post(f"/api/bookings/{booking_id}/check-in/")
+    resp3 = client.post(f"/api/bookings/{booking_id}/check-out/")
+    assert resp3.status_code == 200
+    logs = list(Booking.objects.get(pk=booking_id).logs.order_by("created_at"))
+    assert logs[-1].action == "checked_out"
+
+
+@pytest.mark.django_db
+def test_booking_activity_log_after_cancel(client):
+    """Cancelling a booking appends a 'cancelled' log entry."""
+    rt, room = _make_room_pair("Double")
+    payload = {
+        "room_type": rt.name,
+        "room_number": room.room_number,
+        "check_in": "2026-10-01",
+        "check_out": "2026-10-05",
+        "guests": 2,
+        "first_name": "Dan",
+        "last_name": "Brown",
+    }
+    resp = client.post("/api/bookings/create/", json.dumps(payload), content_type="application/json")
+    booking_id = resp.json()["booking"]["id"]
+    resp2 = client.post(f"/api/bookings/{booking_id}/cancel/")
+    assert resp2.status_code == 200
+    logs = list(Booking.objects.get(pk=booking_id).logs.order_by("created_at"))
+    assert logs[-1].action == "cancelled"
+
+
+@pytest.mark.django_db
+def test_booking_activity_api_returns_timeline(client):
+    """GET /api/bookings/<pk>/activity/ returns the full timeline."""
+    rt, room = _make_room_pair("Single")
+    payload = {
+        "room_type": rt.name,
+        "room_number": room.room_number,
+        "check_in": "2026-07-01",
+        "check_out": "2026-07-02",
+        "guests": 1,
+        "first_name": "Eve",
+        "last_name": "Davis",
+    }
+    resp = client.post("/api/bookings/create/", json.dumps(payload), content_type="application/json")
+    booking_id = resp.json()["booking"]["id"]
+    client.post(f"/api/bookings/{booking_id}/check-in/")
+    activity_resp = client.get(f"/api/bookings/{booking_id}/activity/")
+    assert activity_resp.status_code == 200
+    data = activity_resp.json()
+    assert data["booking_id"] == booking_id
+    assert data["current_status"] == BookingStatus.CHECKED_IN
+    actions = [entry["action"] for entry in data["activity_log"]]
+    assert actions == ["created", "checked_in"]
+
+
+@pytest.mark.django_db
+def test_booking_activity_api_404_for_missing_booking(client):
+    """Requesting activity for a non-existent booking returns 404."""
+    resp = client.get("/api/bookings/99999/activity/")
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Booking not found"
