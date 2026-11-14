@@ -3,6 +3,7 @@
 from django.urls import path
 
 from .views import (
+    AvailabilityStreamView,
     AvailabilityView,
     BookingActivityView,
     BookingCancelView,
@@ -42,4 +43,5 @@ urlpatterns = [
     path("admin/export/", booking_export, name="booking-export"),
     path("feed/", booking_calendar_feed, name="calendar-feed"),
     path("bookings/<int:pk>/activity/", BookingActivityView.as_view(), name="booking-activity"),
+    path("availability/stream/", AvailabilityStreamView.as_view(), name="availability-stream"),
 ]
