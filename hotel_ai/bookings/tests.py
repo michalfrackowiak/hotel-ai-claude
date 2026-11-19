@@ -18,6 +18,7 @@ from hotel_ai.bookings.services import (
     check_out_booking,
     create_booking,
     find_available_rooms,
+    no_show_booking,
     overlapping_bookings,
     resolve_client,
 )
@@ -945,3 +946,29 @@ def test_availability_stream_class_attributes(client):
     assert hasattr(AvailabilityStreamView, "_poll_loop")
     assert hasattr(AvailabilityStreamView, "ensure_watcher")
     assert hasattr(AvailabilityStreamView, "get")
+
+
+@pytest.mark.django_db
+def test_availability_stream_poll_loop_excludes_no_show(client, monkeypatch):
+    """The poll loop counts only bookings that actually occupy rooms."""
+    from hotel_ai.bookings.views import AvailabilityStreamView
+    from hotel_ai.bookings.models import Client, Room, RoomType
+
+    rt = RoomType.objects.create(name="Double", base_price_per_night=Decimal("300"), capacity=2)
+    room = Room.objects.create(room_number="SSE-1", room_type=rt)
+    no_show_room = Room.objects.create(room_number="SSE-2", room_type=rt)
+    guest = Client.objects.create(first_name="SSE", last_name="Test")
+    create_booking(room=room, client=guest, check_in=_dt.date.today(), check_out=_dt.date.today() + _dt.timedelta(days=1))
+    no_show = create_booking(room=no_show_room, client=guest, check_in=_dt.date.today(), check_out=_dt.date.today() + _dt.timedelta(days=1))
+    no_show_booking(no_show)
+
+    captured = {}
+    monkeypatch.setattr(AvailabilityStreamView, "_running", True)
+
+    def fake_emit(data):
+        captured["payload"] = data
+
+    monkeypatch.setattr(AvailabilityStreamView, "_emit", fake_emit)
+    monkeypatch.setattr("hotel_ai.bookings.views.time.sleep", lambda *_: setattr(AvailabilityStreamView, "_running", False))
+    AvailabilityStreamView._poll_loop()
+    assert captured["payload"]["active_bookings"] == 1

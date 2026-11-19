@@ -515,7 +515,9 @@ class AvailabilityStreamView(APIView):
             time.sleep(2)
             try:
                 active = (
-                    Booking.objects.exclude(status=BookingStatus.CANCELLED)
+                    Booking.objects.exclude(
+                        status__in=[BookingStatus.CANCELLED, BookingStatus.NO_SHOW]
+                    )
                     .count()
                 )
             except Exception:  # noqa: BLE001
