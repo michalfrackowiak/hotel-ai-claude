@@ -181,11 +181,9 @@ def test_sync_event_update_is_called_when_event_exists(hotel):
         check_in=_dt.date(2026, 9, 1),
         check_out=_dt.date(2026, 9, 3),
     )
-    sync, _ = CalendarSync.objects.update_or_create(
-        booking=booking,
-        room_calendar=rc,
-        defaults={"google_event_id": "existing-eid", "status": "synced"},
-    )
+    sync = CalendarSync.objects.get(booking=booking, room_calendar=rc)
+    sync.google_event_id = "existing-eid"
+    sync.save(update_fields=["google_event_id"])
 
     with mock.patch("hotel_ai.calendar_integration.services._get_calendar_service") as svc:
         events_mock = mock.MagicMock()
@@ -195,6 +193,64 @@ def test_sync_event_update_is_called_when_event_exists(hotel):
         sync_booking(booking)
         events_mock.update.assert_called_once()
         events_mock.insert.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_sync_delete_event_deletes_existing_event(hotel):
+    """_delete_event calls the calendar delete endpoint for an existing event."""
+    from unittest import mock
+
+    rc = ensure_room_calendar(hotel["room"])
+    conn = GoogleCalendarConnection.objects.create(google_user_email="d@h.com")
+    rc.connection = conn
+    rc.calendar_id = "cal-id"
+    rc.save()
+    booking = create_booking(
+        room=hotel["room"],
+        client=Client.objects.create(first_name="D", last_name="E"),
+        check_in=_dt.date(2026, 10, 1),
+        check_out=_dt.date(2026, 10, 3),
+    )
+    cancel_booking(booking)
+    sync = CalendarSync.objects.get(booking=booking, room_calendar=rc)
+    sync.google_event_id = "ev-1"
+    sync.save()
+    with mock.patch("hotel_ai.calendar_integration.services._get_calendar_service") as svc:
+        delete_mock = mock.MagicMock()
+        svc.return_value.events.return_value.delete.return_value = delete_mock
+        delete_mock.execute.return_value = {}
+        sync_booking(booking)
+        delete_mock.execute.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_sync_delete_event_failure_records_failed(hotel):
+    """A delete failure records 'failed' rather than raising."""
+    from unittest import mock
+
+    rc = ensure_room_calendar(hotel["room"])
+    conn = GoogleCalendarConnection.objects.create(google_user_email="f@h.com")
+    rc.connection = conn
+    rc.calendar_id = "cal-id"
+    rc.save()
+    booking = create_booking(
+        room=hotel["room"],
+        client=Client.objects.create(first_name="F", last_name="Ail"),
+        check_in=_dt.date(2026, 11, 1),
+        check_out=_dt.date(2026, 11, 3),
+    )
+    cancel_booking(booking)
+    sync = CalendarSync.objects.get(booking=booking, room_calendar=rc)
+    sync.google_event_id = "ev-2"
+    sync.save()
+    with mock.patch("hotel_ai.calendar_integration.services._get_calendar_service") as svc:
+        delete_mock = mock.MagicMock()
+        delete_mock.execute.side_effect = RuntimeError("boom")
+        svc.return_value.events.return_value.delete.return_value = delete_mock
+        sync_booking(booking)
+        sync.refresh_from_db()
+        assert sync.status == "failed"
+        assert "boom" in sync.error_message
 
 
 # ---------------------------------------------------------------------------
