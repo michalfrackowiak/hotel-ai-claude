@@ -94,7 +94,7 @@ def sync_booking(booking: Booking) -> CalendarSync:
         defaults={"status": "pending"},
     )
 
-    if booking.status == "cancelled":
+    if booking.status in ("cancelled", "no_show"):
         return _delete_event(sync, room_calendar)
 
     try:

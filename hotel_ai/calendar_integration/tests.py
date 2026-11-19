@@ -8,7 +8,7 @@ from decimal import Decimal
 import pytest
 
 from hotel_ai.bookings.models import Client, Room, RoomType
-from hotel_ai.bookings.services import cancel_booking, create_booking
+from hotel_ai.bookings.services import cancel_booking, create_booking, no_show_booking
 
 from .models import CalendarSync, GoogleCalendarConnection, RoomCalendar
 from .services import ensure_room_calendar, sync_booking
@@ -118,3 +118,26 @@ def test_cancel_booking_records_sync_attempt(hotel):
     # Cancelling twice is idempotent and does not raise.
     cancel_booking(booking)
     assert booking.status == "cancelled"
+
+
+@pytest.mark.django_db
+def test_no_show_booking_records_sync_attempt(hotel):
+    """No-show goes through the service layer so the calendar audit row updates."""
+    client = Client.objects.create(first_name="A", last_name="B")
+    booking = create_booking(
+        room=hotel["room"],
+        client=client,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+    )
+    assert booking.status == "confirmed"
+
+    no_show_booking(booking)
+    assert booking.status == "no_show"
+    # The sync row still exists after no-show (status recorded, no crash).
+    assert CalendarSync.objects.filter(booking=booking).exists()
+
+    # The service layer rejects a second no-show (only confirmed bookings
+# can be marked); the API view above wraps that in an idempotent 200.
+    with pytest.raises(ValueError):
+        no_show_booking(booking)

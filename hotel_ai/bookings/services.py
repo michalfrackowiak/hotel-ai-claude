@@ -241,6 +241,9 @@ def no_show_booking(booking: Booking) -> Booking:
 
     Only confirmed bookings can become no-shows; already-cancelled or
     checked-in bookings are rejected so the action cannot be applied twice.
+
+    The calendar event is updated (or deleted) so the room no longer shows
+    as occupied for the stay — the room is available for re-booking.
     """
     if booking.status != BookingStatus.CONFIRMED:
         raise ValueError(
@@ -249,6 +252,12 @@ def no_show_booking(booking: Booking) -> Booking:
     booking.status = BookingStatus.NO_SHOW
     booking.save()
     BookingLog.objects.create(booking=booking, action="no_show")
+    try:
+        from hotel_ai.calendar_integration.services import sync_booking
+
+        sync_booking(booking)
+    except Exception:  # noqa: BLE001
+        logger.debug("Calendar sync skipped for no-show booking %s", booking.id, exc_info=True)
     return booking
 
 
