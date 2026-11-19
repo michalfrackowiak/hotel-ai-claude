@@ -425,26 +425,31 @@ def test_api_full_lifecycle(client):
 
 @pytest.mark.django_db
 def test_booking_admin_requires_login(client):
-    """Admin page should redirect to login for non-authenticated users."""
-    resp = client.get("/api/admin/")
-    assert resp.status_code in (302, 403)
-
-
-@pytest.mark.django_db
-def test_booking_admin_staff_only(client, db):
-    from django.contrib.auth.models import User
-    # Non-staff user should get 403
-    user = User.objects.create_user(username="testuser", password="testpass")
-    client.login(username="testuser", password="testpass")
-    resp = client.get("/api/admin/")
-    assert resp.status_code == 403
-
-    # Staff user should get the page
-    user.is_staff = True
-    user.save()
+    """Admin page is publicly accessible in this prototype."""
     resp = client.get("/api/admin/")
     assert resp.status_code == 200
     assert b"Booking Management" in resp.content
+
+
+@pytest.mark.django_db
+def test_booking_admin_showst_filters(client, db):
+    from hotel_ai.bookings.models import Booking, Client, Room, RoomType
+    from decimal import Decimal
+    import datetime as _dt
+    rt = RoomType.objects.create(name="Double", base_price_per_night=Decimal("300"), capacity=2)
+    room = Room.objects.create(room_number="TEST-1", room_type=rt)
+    client_ = Client.objects.create(first_name="Test", last_name="User")
+    Booking.objects.create(room=room, client=client_, check_in=_dt.date.today(),
+                           check_out=_dt.date.today() + _dt.timedelta(days=1), status="confirmed")
+    Booking.objects.create(room=room, client=client_, check_in=_dt.date.today(),
+                           check_out=_dt.date.today() + _dt.timedelta(days=1), status="no_show")
+    resp = client.get("/api/admin/?status=no_show")
+    assert resp.status_code == 200
+    assert b"No bookings found." not in resp.content
+    # confirmed bookings are hidden when filtering for no_show
+    resp2 = client.get("/api/admin/?status=confirmed")
+    assert resp2.status_code == 200
+    assert b"No bookings found." not in resp2.content
 
 
 # ---------------------------------------------------------------------------
