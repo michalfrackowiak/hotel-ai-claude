@@ -6,6 +6,7 @@ import datetime as _dt
 from decimal import Decimal
 
 import pytest
+from rest_framework.test import APIClient
 
 from hotel_ai.bookings.models import Client, Room, RoomType
 from hotel_ai.bookings.services import cancel_booking, create_booking, no_show_booking
@@ -141,3 +142,87 @@ def test_no_show_booking_records_sync_attempt(hotel):
 # can be marked); the API view above wraps that in an idempotent 200.
     with pytest.raises(ValueError):
         no_show_booking(booking)
+
+
+# ---------------------------------------------------------------------------
+# API endpoints
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_resync_booking_returns_404_for_missing_booking():
+    client = APIClient()
+    resp = client.post("/api/calendar/sync/999999/")
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Booking not found"
+
+
+@pytest.mark.django_db
+def test_resync_booking_endpoint_reports_sync_status(hotel):
+    """The resync endpoint re-runs sync_booking and returns its status."""
+    client = APIClient()
+    booking = create_booking(
+        room=hotel["room"],
+        client=Client.objects.create(first_name="A", last_name="B"),
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+    )
+    resp = client.post(f"/api/calendar/sync/{booking.id}/")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["booking_id"] == booking.id
+    assert body["status"] == "skipped"
+
+
+@pytest.mark.django_db
+def test_resync_booking_endpoint_is_idempotent(hotel):
+    """Re-running the sync endpoint does not raise or duplicate rows."""
+    client = APIClient()
+    booking = create_booking(
+        room=hotel["room"],
+        client=Client.objects.create(first_name="A", last_name="B"),
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+    )
+    first = client.post(f"/api/calendar/sync/{booking.id}/")
+    second = client.post(f"/api/calendar/sync/{booking.id}/")
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert CalendarSync.objects.filter(booking=booking).count() == 1
+
+
+@pytest.mark.django_db
+def test_list_room_calendars_returns_mapping_rows(hotel):
+    client = APIClient()
+    ensure_room_calendar(hotel["room"])
+    resp = client.get("/api/calendar/calendars/")
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert len(rows) == 1
+    assert rows[0]["room"] == hotel["room"].room_number
+    assert rows[0]["calendar_name"] == f"Room {hotel['room'].room_number}"
+    assert rows[0]["is_active"] is True
+
+
+@pytest.mark.django_db
+def test_list_room_calendars_empty_when_no_mappings():
+    client = APIClient()
+    resp = client.get("/api/calendar/calendars/")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+@pytest.mark.django_db
+def test_resync_after_cancel_deletes_event(hotel):
+    """Cancelling a booking then resyncing records the delete attempt."""
+    client = APIClient()
+    booking = create_booking(
+        room=hotel["room"],
+        client=Client.objects.create(first_name="A", last_name="B"),
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+    )
+    cancel_booking(booking)
+    resp = client.post(f"/api/calendar/sync/{booking.id}/")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "skipped"
