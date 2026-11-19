@@ -486,6 +486,32 @@ def test_dashboard_activity_timeline_shows_log_entries(client):
     assert "created" in body
 
 
+@pytest.mark.django_db
+def test_dashboard_shows_room_grid(client):
+    """The dashboard renders a clickable room grid per room type."""
+    import datetime as _dt
+    from django.contrib.auth.models import User
+
+    user = User.objects.create_user(username="dashuser3", password="dashpass")
+    client.login(username="dashuser3", password="dashpass")
+
+    rt, room = _make_room_pair("Single")
+    guest = Client.objects.create(first_name="Grid", last_name="User", email="g@example.com")
+    booking = create_booking(
+        room=room, client=guest, check_in=_dt.date(2026, 7, 1), check_out=_dt.date(2026, 7, 3)
+    )
+
+    # Request the date the booking actually covers so the grid marks it occupied.
+    resp = client.get("/dashboard/", {"date": "2026-07-01"})
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert "Room Grid" in body
+    assert room.room_number in body
+    # The occupied tile carries the booking id so toggleRoom can act on it.
+    assert f'data-booking-id="{booking.id}"' in body
+    assert "function toggleRoom" in body
+
+
 # ---------------------------------------------------------------------------
 # iCal calendar feed
 # ---------------------------------------------------------------------------

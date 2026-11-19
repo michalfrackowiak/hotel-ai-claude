@@ -74,6 +74,25 @@ tr:hover td { background:#f8f9fa; }
   </div>
 </div>
 <div class="section" style="margin-top:1.5rem">
+  <h2>{% if language == 'pl' %}Mapa pokoi{% else %}Room Grid{% endif %}</h2>
+  {% for group in room_grid %}
+  <div style="margin-bottom:1.5rem">
+    <h3 style="font-size:.95rem;color:var(--gray);margin-bottom:.5rem">{{ group.room_type }}</h3>
+    <div style="display:flex;flex-wrap:wrap;gap:.5rem">
+      {% for room in group.rooms %}
+      <a href="#" data-booking-id="{{ room.booking_id|default:"" }}" data-status="{{ room.status|default:"available" }}"
+         onclick="event.preventDefault(); toggleRoom(this)"
+         style="display:inline-flex;align-items:center;justify-content:center;width:64px;height:64px;border-radius:8px;font-weight:700;font-size:1rem;text-decoration:none;cursor:pointer;border:2px solid {% if room.occupied %}{% if room.status == 'checked_in' %}#fa9c33{% else %}#ea4335{% endif %}{% else %}#34a853{% endif %};color:white;background:{% if room.occupied %}#333{% else %}#e8f5e9{% endif %}">
+        {{ room.number }}
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% empty %}
+  <p style="color:var(--gray)">{% if language == 'pl' %}Brak typów pokojów.{% else %}No room types configured.{% endif %}</p>
+  {% endfor %}
+</div>
+<div class="section" style="margin-top:1.5rem">
   <h2>{% if language == 'pl' %}Wykaszczeni dziś (przybycia){% else %}Today's Arrivals{% endif %}</h2>
   <table>
     <thead><tr><th>ID</th><th>{% if language == 'pl' %}Gość{% else %}Guest{% endif %}</th><th>E-mail</th><th>Pokój</th><th>{% if language == 'pl' %}Przyjazd{% else %}Check-in{% endif %}</th><th>{% if language == 'pl' %}Wymeldowanie{% else %}Check-out{% endif %}</th><th>Status</th></tr></thead>
@@ -133,6 +152,34 @@ tr:hover td { background:#f8f9fa; }
     </tbody>
   </table>
 </div>
+<script>
+const roomColors = { checked_in: '#fa9c33', confirmed: '#ea4335', available: '#34a853' };
+const roomBg   = { checked_in: '#fff3e0', confirmed: '#fce4ec', available: '#e8f5e9' };
+
+function toggleRoom(el) {
+  const bookingId = el.dataset.bookingId;
+  if (!bookingId) return;
+  const st = el.dataset.status;
+  const action = st === 'checked_in' ? 'cancel' : st === 'confirmed' ? 'check-out' : 'check-in';
+  fetch(`/api/bookings/${bookingId}/${action}/`, {
+    method: 'POST', headers: {'X-CSRFToken': getCookie('csrftoken')}, credentials: 'same-origin'
+  }).then(r => r.json()).then(data => {
+    if (data.booking) {
+      el.dataset.status = data.booking.status;
+      const s = data.booking.status;
+      el.style.borderColor = roomColors[s] || '#333';
+      el.style.background  = roomBg[s] || '#eee';
+      el.title = `${s} · ${bookingId}`;
+    }
+  }).catch(() => {});
+}
+
+function getCookie(name) {
+  let v; document.cookie.split(';').forEach(c => {
+    if (c.trim().startsWith(name + '=')) v = decodeURIComponent(c.trim().slice(name.length + 1));
+  }); return v;
+}
+
 <script>
 const picker = document.getElementById('datePicker');
 picker.addEventListener('change', () => window.location.href = '?date=' + picker.value);
