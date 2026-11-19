@@ -1072,3 +1072,115 @@ def test_booking_export_room_type_filter(client):
     body = resp.content.decode()
     assert "Double Guy" in body
     assert "Single Guy" not in body
+
+
+# ---------------------------------------------------------------------------
+# Admin page filters
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_booking_admin_room_type_filter(client):
+    """The admin page filters by room type."""
+    rt_single, room_single = _make_room_pair("Single")
+    rt_double, room_double = _make_room_pair("Double")
+    Client.objects.create(first_name="Single", last_name="Guy", email="s@x.com")
+    Client.objects.create(first_name="Double", last_name="Guy", email="d@x.com")
+    create_booking(
+        room=room_single,
+        client=Client.objects.get(first_name="Single", last_name="Guy"),
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+    )
+    create_booking(
+        room=room_double,
+        client=Client.objects.get(first_name="Double", last_name="Guy"),
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+    )
+
+    resp = client.get("/api/admin/", {"room_type": "Double"})
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert "Double Guy" in body
+    assert "Single Guy" not in body
+
+
+@pytest.mark.django_db
+def test_booking_admin_search_filter(client):
+    """The admin page searches by guest name and email."""
+    rt, room = _make_room_pair("Single")
+    Client.objects.create(first_name="Alice", last_name="Smith", email="alice@x.com")
+    Client.objects.create(first_name="Bob", last_name="Jones", email="bob@x.com")
+    create_booking(
+        room=room,
+        client=Client.objects.get(first_name="Alice", last_name="Smith"),
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+    )
+    create_booking(
+        room=room,
+        client=Client.objects.get(first_name="Bob", last_name="Jones"),
+        check_in=_dt.date(2026, 7, 5),
+        check_out=_dt.date(2026, 7, 7),
+    )
+
+    resp = client.get("/api/admin/", {"search": "alice"})
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert "Alice Smith" in body
+    assert "Bob Jones" not in body
+
+
+@pytest.mark.django_db
+def test_booking_admin_check_in_date_filter(client):
+    """The admin page filters by check-in date range."""
+    rt, room = _make_room_pair("Single")
+    Client.objects.create(first_name="Early", last_name="Guest", email="e@x.com")
+    Client.objects.create(first_name="Late", last_name="Guest", email="l@x.com")
+    create_booking(
+        room=room,
+        client=Client.objects.get(first_name="Early", last_name="Guest"),
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+    )
+    create_booking(
+        room=room,
+        client=Client.objects.get(first_name="Late", last_name="Guest"),
+        check_in=_dt.date(2026, 8, 1),
+        check_out=_dt.date(2026, 8, 3),
+    )
+
+    resp = client.get("/api/admin/", {"check_in_from": "2026-08-01"})
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert "Late Guest" in body
+    assert "Early Guest" not in body
+
+
+@pytest.mark.django_db
+def test_booking_admin_combined_filters(client):
+    """Status and room type filters compose correctly."""
+    rt_single, room_single = _make_room_pair("Single")
+    rt_double, room_double = _make_room_pair("Double")
+    Client.objects.create(first_name="Single", last_name="Guy", email="s@x.com")
+    Client.objects.create(first_name="Double", last_name="Guy", email="d@x.com")
+    b1 = create_booking(
+        room=room_single,
+        client=Client.objects.get(first_name="Single", last_name="Guy"),
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+    )
+    b2 = create_booking(
+        room=room_double,
+        client=Client.objects.get(first_name="Double", last_name="Guy"),
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+    )
+    cancel_booking(b1)
+
+    resp = client.get("/api/admin/", {"status": "confirmed", "room_type": "Double"})
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert "Double Guy" in body
+    assert "Single Guy" not in body
