@@ -972,3 +972,43 @@ def test_availability_stream_poll_loop_excludes_no_show(client, monkeypatch):
     monkeypatch.setattr("hotel_ai.bookings.views.time.sleep", lambda *_: setattr(AvailabilityStreamView, "_running", False))
     AvailabilityStreamView._poll_loop()
     assert captured["payload"]["active_bookings"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Booking export
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_booking_export_csv(client):
+    """GET /api/admin/export/ returns a CSV of bookings."""
+    rt, room = _make_room_pair("Single")
+    guest = Client.objects.create(first_name="Export", last_name="User", email="e@x.com")
+    create_booking(
+        room=room, client=guest, check_in=_dt.date(2026, 7, 1), check_out=_dt.date(2026, 7, 3)
+    )
+
+    resp = client.get("/api/admin/export/")
+    assert resp.status_code == 200
+    assert resp["Content-Type"].startswith("text/csv")
+    body = resp.content.decode()
+    assert "Export User" in body
+    assert "confirmed" in body
+
+
+@pytest.mark.django_db
+def test_booking_export_csv_empty(client):
+    resp = client.get("/api/admin/export/")
+    assert resp.status_code == 200
+    body = resp.content.decode().strip()
+    assert body.splitlines() == [
+        "ID,Client,Email,Room Number,Room Type,Check-in,Check-out,Nights,Guests,"
+        "Total Price,Currency,Status,Source,Created At"
+    ]
+
+
+@pytest.mark.django_db
+def test_booking_export_csv_filename(client):
+    resp = client.get("/api/admin/export/")
+    assert resp.status_code == 200
+    assert "bookings-export.csv" in resp["Content-Disposition"]
