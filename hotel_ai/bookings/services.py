@@ -236,6 +236,22 @@ def cancel_booking(booking: Booking) -> Booking:
     return booking
 
 
+def no_show_booking(booking: Booking) -> Booking:
+    """Mark a confirmed booking whose guest did not arrive as a no-show.
+
+    Only confirmed bookings can become no-shows; already-cancelled or
+    checked-in bookings are rejected so the action cannot be applied twice.
+    """
+    if booking.status != BookingStatus.CONFIRMED:
+        raise ValueError(
+            f"Booking {booking.id} is {booking.status}, expected confirmed"
+        )
+    booking.status = BookingStatus.NO_SHOW
+    booking.save()
+    BookingLog.objects.create(booking=booking, action="no_show")
+    return booking
+
+
 def parse_date(value: str) -> _dt.date:
     """Parse ``YYYY-MM-DD`` into a date, raising a clear error otherwise."""
     try:
@@ -260,6 +276,7 @@ __all__ = [
     "check_in_booking",
     "check_out_booking",
     "cancel_booking",
+    "no_show_booking",
     "parse_date",
     "today",
 ]

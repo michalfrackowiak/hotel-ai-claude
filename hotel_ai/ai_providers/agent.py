@@ -30,6 +30,7 @@ from hotel_ai.bookings.services import (
     check_out_booking,
     create_booking,
     find_available_rooms,
+    no_show_booking,
     resolve_client,
 )
 
@@ -58,6 +59,8 @@ or, to check out a guest:
   {{"action": "check_out", "args": {{"booking_id": 123}}}}
 or, to cancel a booking:
   {{"action": "cancel", "args": {{"booking_id": 123}}}}
+or, to mark a confirmed booking as a no-show (guest did not arrive):
+  {{"action": "no_show", "args": {{"booking_id": 123}}}}
 
 Rules:
 - Before booking, you must know: dates, guests, and the guest's name (+ email or phone).
@@ -83,6 +86,7 @@ Wzory JSON:
 {{"action":"check_in","args":{{"booking_id":123}}}}
 {{"action":"check_out","args":{{"booking_id":123}}}}
 {{"action":"cancel","args":{{"booking_id":123}}}}
+{{"action":"no_show","args":{{"booking_id":123}}}}
 
 Zasady biznesowe:
 - Przed rezerwacją musisz znać: daty, liczbę gości, imię i nazwisko gościa (+ e-mail lub telefon).
@@ -191,6 +195,8 @@ class ReservationAgent:
                 outcome = self._run_check_out(args)
             elif action == "cancel":
                 outcome = self._run_cancel(args)
+            elif action == "no_show":
+                outcome = self._run_no_show(args)
             else:
                 outcome = f"Unknown action '{action}'."
 
@@ -339,6 +345,35 @@ class ReservationAgent:
                 ensure_ascii=False,
             )
         booking = cancel_booking(booking)
+        return json.dumps(
+            {
+                "status": booking.status,
+                "booking_id": booking.id,
+                "room": booking.room.room_number,
+                "guest": booking.client.full_name,
+            },
+            ensure_ascii=False,
+        )
+
+    def _run_no_show(self, args: dict) -> str:
+        booking = self._lookup_booking(args)
+        if isinstance(booking, str):
+            return booking
+        if booking.status == "no_show":
+            return json.dumps(
+                {
+                    "status": booking.status,
+                    "booking_id": booking.id,
+                    "room": booking.room.room_number,
+                    "guest": booking.client.full_name,
+                    "message": "Already marked as no-show.",
+                },
+                ensure_ascii=False,
+            )
+        try:
+            booking = no_show_booking(booking)
+        except ValueError as exc:
+            return f"No-show failed: {exc}"
         return json.dumps(
             {
                 "status": booking.status,

@@ -347,6 +347,31 @@ def test_agent_cancels(hotel):
 
 
 @pytest.mark.django_db
+def test_agent_marks_no_show(hotel):
+    rt, room = hotel["Single"], hotel["room"]
+    booking = create_booking(
+        room=room,
+        client=Client.objects.create(first_name="Noa", email="noa@test.com"),
+        check_in=_dt.date.today(),
+        check_out=_dt.date.today() + _dt.timedelta(days=1),
+        guests=1,
+    )
+    provider = FakeProvider(
+        {"provider_type": "fake", "model": "fake"},
+        replies=[
+            json.dumps({"action": "no_show", "args": {"booking_id": booking.id}}),
+            json.dumps({"action": "reply", "text": "Marked as no-show."}),
+        ],
+    )
+    agent = ReservationAgent(language="en", provider=provider)
+    conv = Conversation.objects.create(session_key="s-no_show", channel="chat")
+    result = agent.handle_message(conv, f"Guest {booking.client.first_name} didn't show up")
+    assert result.action == "no_show" or result.text
+    booking.refresh_from_db()
+    assert booking.status == BookingStatus.NO_SHOW
+
+
+@pytest.mark.django_db
 def test_agent_lookup_booking_by_name():
     """When no booking_id is given, fall back to name-based lookup."""
     client = Client.objects.create(first_name="Zosia", email="zosia@example.com")
