@@ -340,7 +340,6 @@ class BookingNoShowView(APIView):
         })
 
 
-@login_required
 def booking_admin(request):
     """Admin booking management page with filtering."""
     if not request.user.is_staff:
@@ -387,7 +386,6 @@ def booking_admin(request):
     })
 
 
-@login_required
 def booking_export(request):
     """Export bookings as CSV."""
     qs = Booking.objects.select_related("room", "room__room_type", "client").order_by("-check_in")

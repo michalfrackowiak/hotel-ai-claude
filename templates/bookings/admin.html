@@ -29,7 +29,8 @@ tr:hover td { background:#f8f9fa; }
 .s-checked_in { background:#fff3e0; color:#e65100; }
 .s-checked_out { background:#e3f2fd; color:#1565c0; }
 .s-cancelled { background:#fce4ec; color:#c62828; }
-.s-pending { background:#f3e5f5; color:#6a1b9a; }
+.s-no_show  { background:#eceff1; color:#546e7a; }
+.s-pending  { background:#f3e5f5; color:#6a1b9a; }
 .actions a, .actions form { display:inline-block; margin-right:.25rem; }
 .actions a.btn-ci { background:var(--orange); color:white; border-radius:4px; padding:.25rem .5rem; text-decoration:none; font-size:.75rem; }
 .actions a.btn-co { background:var(--green); color:white; border-radius:4px; padding:.25rem .5rem; text-decoration:none; font-size:.75rem; }
@@ -51,6 +52,7 @@ tr:hover td { background:#f8f9fa; }
     <option value="checked_in" {% if filters.status == "checked_in" %}selected{% endif %}>Checked In</option>
     <option value="checked_out" {% if filters.status == "checked_out" %}selected{% endif %}>Checked Out</option>
     <option value="cancelled" {% if filters.status == "cancelled" %}selected{% endif %}>Cancelled</option>
+    <option value="no_show"   {% if filters.status == "no_show" %}selected{% endif %}>No-Show</option>
   </select>
   <select name="room_type">
     <option value="" {% if not filters.room_type %}selected{% endif %}>All Room Types</option>
@@ -93,10 +95,11 @@ tr:hover td { background:#f8f9fa; }
   <td class="actions">
     {% if b.status == 'confirmed' %}
       <a class="btn-ci" href="{% url 'bookings:booking-check-in' b.id %}">Check In</a>
+      <a class="btn-ci" href="{% url 'bookings:booking-no-show' b.id %}" style="background:#607d8b;margin-left:.25rem" title="Mark as no-show">No-Show</a>
     {% elif b.status == 'checked_in' %}
       <a class="btn-co" href="{% url 'bookings:booking-check-out' b.id %}">Check Out</a>
     {% endif %}
-    {% if b.status != 'cancelled' and b.status != 'checked_out' %}
+    {% if b.status != 'cancelled' and b.status != 'checked_out' and b.status != 'no_show' %}
       <a class="btn-ca" href="{% url 'bookings:booking-cancel' b.id %}" onclick="return confirm('Cancel this booking?')">Cancel</a>
     {% endif %}
   </td>

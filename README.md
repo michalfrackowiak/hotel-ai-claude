@@ -74,7 +74,7 @@ Alpha version of an AI-powered hotel reception system with voice and chat reserv
 | `/api/bookings/<id>/no-show/` | POST | Mark no-show |
 | `/api/availability/stream/` | SSE | Real-time availability events |
 | `/api/admin/` | GET | Admin booking list |
-| `/api/calendar/feed/` | GET | iCal calendar export |
+| `/api/feed/` | GET | iCal calendar export |
 | `/admin/` | GET | Django admin panel |
 
 ## Docker Deployment
