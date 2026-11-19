@@ -79,6 +79,53 @@ def dashboard(request):
         .order_by("-created_at")[:25]
     )
 
+    # Visual room grid: one tile per room, coloured by occupancy so the
+    # front desk can see the whole property at a glance.
+    room_grid = []
+    for rt in room_types:
+        rooms_qs = Room.objects.filter(room_type=rt, is_active=True).order_by("room_number")
+        occupied_ids = set(
+            Booking.objects.filter(
+                room__in=rooms_qs,
+                check_in__lte=selected_date,
+                check_out__gt=selected_date,
+            )
+            .exclude(status="cancelled")
+            .values_list("room_id", flat=True)
+        )
+        tiles = []
+        for r in rooms_qs:
+            active_booking = None
+            if r.id in occupied_ids:
+                active_booking = (
+                    Booking.objects.filter(
+                        room=r,
+                        check_in__lte=selected_date,
+                        check_out__gt=selected_date,
+                    )
+                    .exclude(status="cancelled")
+                    .select_related("client")
+                    .first()
+                )
+            tiles.append({
+                "id": r.id,
+                "number": r.room_number,
+                "occupied": active_booking is not None,
+                "status": active_booking.status if active_booking else None,
+                "guest": (
+                    active_booking.client.full_name
+                    if active_booking and active_booking.client else ""
+                ),
+                "booking_id": active_booking.id if active_booking else None,
+                "check_in": (
+                    active_booking.check_in.isoformat() if active_booking else None
+                ),
+                "check_out": (
+                    active_booking.check_out.isoformat() if active_booking else None
+                ),
+            })
+        room_grid.append({"room_type": rt.name, "rooms": tiles})
+
     pl = language == "pl"
     return render(request, "dashboard/index.html", {
         "language": language,
@@ -89,6 +136,7 @@ def dashboard(request):
         "arrived_today": len(arrivals),
         "departing_today": len(departures),
         "room_stats": room_stats,
+        "room_grid": room_grid,
         "arrivals": arrivals,
         "departures": departures,
         "recent_activity": recent_activity,
