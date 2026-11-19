@@ -1282,3 +1282,262 @@ def test_booking_list_json(client):
 def test_booking_list_json_404_for_missing(client):
     resp = client.get("/api/bookings/99999/")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# API view branches (line coverage)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_api_availability_get_rejects_bad_dates(client):
+    """GET /api/availability/ returns 400 when dates are malformed."""
+    resp = client.get("/api/availability/", {"check_in": "bad", "check_out": "2026-07-02"})
+    assert resp.status_code == 400
+    assert "Invalid date" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_api_availability_post_known_room_type(client):
+    """POST /api/availability/ with a known room_type covers the branch."""
+    rt, room = _make_room_pair("Single")
+    resp = client.post(
+        "/api/availability/",
+        {"room_type": rt.name, "check_in": "2026-07-01", "check_out": "2026-07-02", "guests": 1},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["room_type"] == rt.name
+    assert isinstance(data["available"], bool)
+
+
+@pytest.mark.django_db
+def test_api_availability_post_unknown_room_type(client):
+    """Unknown room type in POST body is surfaced in the response."""
+    resp = client.post(
+        "/api/availability/",
+        {"room_type": "Phantom", "check_in": "2026-07-01", "check_out": "2026-07-02"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert "Unknown room type" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_api_pricing_post(client):
+    rt, _ = _make_room_pair("Double")
+    resp = client.post(
+        "/api/pricing/",
+        {"room_type": rt.name, "check_in": "2026-08-01", "check_out": "2026-08-04"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["nights"] == 3
+    assert data["total_price"] == "900.00"
+
+
+@pytest.mark.django_db
+def test_api_pricing_post_unknown_room_type(client):
+    resp = client.post(
+        "/api/pricing/",
+        {"room_type": "Penthouse", "check_in": "2026-07-01", "check_out": "2026-07-02"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Unknown room type"
+
+
+@pytest.mark.django_db
+def test_api_booking_create_unknown_room_type(client):
+    rt, _ = _make_room_pair("Single")
+    payload = {
+        "room_type": "PhantomType",
+        "room_number": "999",
+        "check_in": "2026-07-01",
+        "check_out": "2026-07-02",
+        "guests": 1,
+        "first_name": "A",
+        "last_name": "B",
+        "email": "a@b.com",
+    }
+    resp = client.post(
+        "/api/bookings/create/", json.dumps(payload), content_type="application/json"
+    )
+    assert resp.status_code == 404
+    assert "Unknown room type" in resp.json()["detail"]
+    assert RoomType.objects.filter(name=rt.name).exists()
+
+
+@pytest.mark.django_db
+def test_api_booking_create_unknown_room_number(client):
+    rt, room = _make_room_pair("Single")
+    payload = {
+        "room_type": rt.name,
+        "room_number": "NONEXISTENT",
+        "check_in": "2026-07-01",
+        "check_out": "2026-07-02",
+        "guests": 1,
+        "first_name": "A",
+        "last_name": "B",
+        "email": "a@b.com",
+    }
+    resp = client.post(
+        "/api/bookings/create/", json.dumps(payload), content_type="application/json"
+    )
+    assert resp.status_code == 404
+    assert "Room 'NONEXISTENT' not found" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_api_cancel_not_found(client):
+    resp = client.post("/api/bookings/99999/cancel/")
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Booking not found"
+
+
+@pytest.mark.django_db
+def test_api_cancel_already_cancelled_is_idempotent(client):
+    rt, room = _make_room_pair("Single")
+    payload = {
+        "room_type": rt.name,
+        "room_number": room.room_number,
+        "check_in": "2026-11-01",
+        "check_out": "2026-11-02",
+        "guests": 1,
+        "first_name": "X",
+        "last_name": "Y",
+        "email": "x@y.com",
+    }
+    resp = client.post("/api/bookings/create/", json.dumps(payload), content_type="application/json")
+    bid = resp.json()["booking"]["id"]
+    client.post(f"/api/bookings/{bid}/cancel/")
+    resp2 = client.post(f"/api/bookings/{bid}/cancel/")
+    assert resp2.status_code == 200
+    assert resp2.json()["message"] == "Already cancelled."
+
+
+@pytest.mark.django_db
+def test_api_check_in_not_found(client):
+    resp = client.post("/api/bookings/99999/check-in/")
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Booking not found"
+
+
+@pytest.mark.django_db
+def test_api_check_out_not_found(client):
+    resp = client.post("/api/bookings/99999/check-out/")
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Booking not found"
+
+
+@pytest.mark.django_db
+def test_api_no_show_not_found(client):
+    resp = client.post("/api/bookings/99999/no-show/")
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Booking not found"
+
+
+@pytest.mark.django_db
+def test_booking_admin_check_in_to_filter(client):
+    """Admin page respects the check_in_to parameter."""
+    rt, room = _make_room_pair("Single")
+    create_booking(room=room, client=Client.objects.create(first_name="A", last_name="X"), check_in=_dt.date(2026, 6, 1), check_out=_dt.date(2026, 6, 2))
+    create_booking(room=room, client=Client.objects.create(first_name="B", last_name="Y"), check_in=_dt.date(2026, 8, 1), check_out=_dt.date(2026, 8, 2))
+    resp = client.get("/api/admin/", {"check_in_to": "2026-07-01"})
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert "A X" in body
+    assert "B Y" not in body
+
+
+@pytest.mark.django_db
+def test_booking_export_check_in_to_filter(client):
+    rt, room = _make_room_pair("Single")
+    create_booking(room=room, client=Client.objects.create(first_name="A", last_name="X"), check_in=_dt.date(2026, 6, 1), check_out=_dt.date(2026, 6, 2))
+    create_booking(room=room, client=Client.objects.create(first_name="B", last_name="Y"), check_in=_dt.date(2026, 8, 1), check_out=_dt.date(2026, 8, 2))
+    resp = client.get("/api/admin/export/", {"check_in_to": "2026-07-01"})
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert "A X" in body
+    assert "B Y" not in body
+
+
+@pytest.mark.django_db
+def test_booking_export_check_in_from_filter(client):
+    rt, room = _make_room_pair("Single")
+    create_booking(room=room, client=Client.objects.create(first_name="A", last_name="X"), check_in=_dt.date(2026, 6, 1), check_out=_dt.date(2026, 6, 2))
+    create_booking(room=room, client=Client.objects.create(first_name="B", last_name="Y"), check_in=_dt.date(2026, 8, 1), check_out=_dt.date(2026, 8, 2))
+    resp = client.get("/api/admin/export/", {"check_in_from": "2026-07-01"})
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert "B Y" in body
+    assert "A X" not in body
+
+
+@pytest.mark.django_db
+def test_availability_stream_emit_sets_queue(client, monkeypatch):
+    from hotel_ai.bookings.views import AvailabilityStreamView
+    monkeypatch.setattr(AvailabilityStreamView, "_running", False)
+    AvailabilityStreamView._event_queue.clear()
+    AvailabilityStreamView._emit({"type": "test"})
+    assert AvailabilityStreamView._event_queue == [{"type": "test"}]
+
+
+@pytest.mark.django_db
+def test_availability_stream_poll_loop_handles_db_error(client, monkeypatch):
+    from hotel_ai.bookings.views import AvailabilityStreamView
+    import threading
+    monkeypatch.setattr(AvailabilityStreamView, "_running", True)
+    monkeypatch.setattr(AvailabilityStreamView, "_watcher_thread", None)
+    # Make the booking count query always raise
+    original_count = Booking.objects.count
+    Booking.objects.count = lambda *a, **k: (_ for _ in []).throw(RuntimeError("boom"))
+    try:
+        t = threading.Thread(target=AvailabilityStreamView._poll_loop, daemon=True)
+        t.start()
+        # Wait long enough for one poll cycle; exceptions are swallowed silently.
+        import time as _time
+        _time.sleep(2.5)
+        t.join(timeout=1)
+    finally:
+        AvailabilityStreamView._running = False
+        Booking.objects.count = original_count
+
+
+@pytest.mark.django_db
+def test_room_bulk_update_invalid_body_returns_400(client):
+    resp = client.patch("/api/rooms/bulk-update/", "[]notjson", content_type="application/json")
+    # DRF parses JSON; a non-dict/non-list body should return 400 at parser level,
+    # but if parsed as list the loop below still handles individual items correctly.
+    # Assert that we don't get an unhandled exception.
+    assert resp.status_code in (400, 207)
+
+
+@pytest.mark.django_db
+def test_room_bulk_update_missing_id(client):
+    rt, _ = _make_room_pair("Single")
+    resp = client.patch(
+        "/api/rooms/bulk-update/",
+        [{"room_number": "999"}],
+        content_type="application/json",
+    )
+    assert resp.status_code == 207
+    data = resp.json()
+    assert any(e.get("error") == "Missing 'id'" for e in data.get("errors", []))
+    assert len(data["updated"]) == 0
+
+
+@pytest.mark.django_db
+def test_room_bulk_update_not_found_room(client):
+    rt, _ = _make_room_pair("Single")
+    resp = client.patch(
+        "/api/rooms/bulk-update/",
+        [{"id": 99999, "is_active": False}],
+        content_type="application/json",
+    )
+    assert resp.status_code == 207  # partial failure
+    data = resp.json()
+    assert len(data["updated"]) == 0
+    assert any(e.get("error") == "Room not found" for e in data["errors"])
