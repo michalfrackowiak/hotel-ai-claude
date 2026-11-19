@@ -7,6 +7,7 @@ import datetime as _dt
 from unittest import mock
 
 import pytest
+from rest_framework.test import APIClient
 
 from hotel_ai.bookings.models import Booking, BookingStatus, Client, Room, RoomType
 from hotel_ai.bookings.services import create_booking
@@ -164,3 +165,116 @@ def test_voice_conversation_updates_language_on_existing_session():
     VoiceConversation("voice-lang", language="pl")
     row = Conversation.objects.get(session_key="voice-lang")
     assert row.language == "pl"
+
+
+# ---------------------------------------------------------------------------
+# API endpoints
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_call_page_renders_english():
+    client = APIClient()
+    resp = client.get("/voice/")
+    assert resp.status_code == 200
+    assert b"Voice Reception" in resp.content
+
+
+@pytest.mark.django_db
+def test_call_page_renders_polish():
+    client = APIClient()
+    resp = client.get("/voice/?lang=pl")
+    assert resp.status_code == 200
+    assert "Głosowa recepcja".encode("utf-8") in resp.content
+
+
+@pytest.mark.django_db
+def test_voice_turn_endpoint_returns_session_key():
+    """The endpoint echoes the session key and runs one full turn."""
+    client = APIClient()
+    fake = mock.MagicMock()
+    fake.turn.return_value = {
+        "transcript": "hello",
+        "text": "hi",
+        "audio_b64": "",
+        "audio_mime": "",
+        "action": "reply",
+        "booking_id": None,
+        "error": None,
+    }
+    with mock.patch("hotel_ai.voice.views.VoiceConversation", return_value=fake):
+        resp = client.post(
+            "/voice/turn/",
+            {"session_key": "sess-1", "audio_b64": "AA==", "language": "en"},
+            format="json",
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["session_key"] == "sess-1"
+    assert body["text"] == "hi"
+    fake.turn.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_voice_turn_endpoint_generates_session_key_when_missing():
+    client = APIClient()
+    fake = mock.MagicMock()
+    fake.turn.return_value = {
+        "transcript": "",
+        "text": "",
+        "audio_b64": "",
+        "audio_mime": "",
+        "action": None,
+        "booking_id": None,
+        "error": "no_transcript",
+    }
+    with mock.patch("hotel_ai.voice.views.VoiceConversation", return_value=fake):
+        resp = client.post(
+            "/voice/turn/", {"audio_b64": "AA=="}, format="json"
+        )
+    assert resp.status_code == 200
+    assert resp.json()["session_key"]
+    assert len(resp.json()["session_key"]) == 32  # uuid4().hex
+
+
+@pytest.mark.django_db
+def test_voice_turn_endpoint_propagates_error():
+    client = APIClient()
+    fake = mock.MagicMock()
+    fake.turn.return_value = {
+        "transcript": "",
+        "text": "",
+        "audio_b64": "",
+        "audio_mime": "",
+        "action": None,
+        "booking_id": None,
+        "error": "no_provider",
+    }
+    with mock.patch("hotel_ai.voice.views.VoiceConversation", return_value=fake):
+        resp = client.post(
+            "/voice/turn/", {"audio_b64": "AA=="}, format="json"
+        )
+    assert resp.status_code == 200
+    assert resp.json()["error"] == "no_provider"
+
+
+@pytest.mark.django_db
+def test_voice_turn_endpoint_passes_mime_to_turn():
+    client = APIClient()
+    fake = mock.MagicMock()
+    fake.turn.return_value = {
+        "transcript": "",
+        "text": "",
+        "audio_b64": "",
+        "audio_mime": "",
+        "action": None,
+        "booking_id": None,
+        "error": "no_transcript",
+    }
+    with mock.patch("hotel_ai.voice.views.VoiceConversation", return_value=fake):
+        client.post(
+            "/voice/turn/",
+            {"audio_b64": "AA==", "mime": "audio/ogg"},
+            format="json",
+        )
+    fake.turn.assert_called_once_with("AA==", mime="audio/ogg")
