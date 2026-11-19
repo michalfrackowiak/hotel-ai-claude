@@ -1690,3 +1690,58 @@ def test_room_bulk_update_not_found_room(client):
     data = resp.json()
     assert len(data["updated"]) == 0
     assert any(e.get("error") == "Room not found" for e in data["errors"])
+
+
+# ---------------------------------------------------------------------------
+# Root URL endpoints (remaining coverage gaps in urls.py / chat.views)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_health_endpoint():
+    from django.test import Client
+
+    resp = Client().get("/health/")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
+
+
+@pytest.mark.django_db
+def test_home_page_language_fallback(client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert b"Hotel Aurora" in resp.content
+
+
+@pytest.mark.django_db
+def test_dashboard_invalid_date_falls_back(client):
+    """An unparseable ?date= value falls back to today instead of crashing."""
+    from django.contrib.auth.models import User
+
+    user = User.objects.create_user(username="dashuser_badate", password="dashpass")
+    client.login(username="dashuser_badate", password="dashpass")
+    resp = client.get("/dashboard/", {"date": "not-a-date"})
+    assert resp.status_code == 200
+    assert b"Room Grid" in resp.content
+
+
+@pytest.mark.django_db
+def test_chat_turn_updates_existing_session_language():
+    from rest_framework.test import APIClient
+    from unittest import mock
+    from hotel_ai.ai_providers.models import Conversation
+
+    conv = Conversation.objects.create(session_key="lang-fresh", channel="chat", language="en")
+    client = APIClient()
+    with mock.patch("hotel_ai.chat.views.ReservationAgent") as MockAgent:
+        MockAgent.return_value.handle_message.return_value = type(
+            "R", (), {"text": "tak", "action": "reply", "booking_id": None, "error": None}
+        )()
+        resp = client.post(
+            "/chat/turn/",
+            {"session_key": "lang-fresh", "language": "pl", "message": "cześć"},
+            format="json",
+        )
+    assert resp.status_code == 200
+    conv.refresh_from_db()
+    assert conv.language == "pl"
