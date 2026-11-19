@@ -322,6 +322,31 @@ def test_agent_checks_out(hotel):
 
 
 @pytest.mark.django_db
+def test_agent_cancels(hotel):
+    rt, room = hotel["Single"], hotel["room"]
+    booking = create_booking(
+        room=room,
+        client=Client.objects.create(first_name="Ania", email="ania@test.com"),
+        check_in=_dt.date.today(),
+        check_out=_dt.date.today() + _dt.timedelta(days=1),
+        guests=1,
+    )
+    provider = FakeProvider(
+        {"provider_type": "fake", "model": "fake"},
+        replies=[
+            json.dumps({"action": "cancel", "args": {"booking_id": booking.id}}),
+            json.dumps({"action": "reply", "text": "Cancelled, Ania."}),
+        ],
+    )
+    agent = ReservationAgent(language="en", provider=provider)
+    conv = Conversation.objects.create(session_key="s-cancel", channel="chat")
+    result = agent.handle_message(conv, f"Cancel booking {booking.id}")
+    assert result.action == "cancel" or result.text
+    booking.refresh_from_db()
+    assert booking.status == BookingStatus.CANCELLED
+
+
+@pytest.mark.django_db
 def test_agent_lookup_booking_by_name():
     """When no booking_id is given, fall back to name-based lookup."""
     client = Client.objects.create(first_name="Zosia", email="zosia@example.com")
