@@ -1255,3 +1255,30 @@ def test_room_list_excludes_inactive(client):
     resp = client.get("/api/rooms/")
     assert resp.status_code == 200
     assert b"INACT-1" not in resp.content
+
+
+# ---------------------------------------------------------------------------
+# Booking list (JSON)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_booking_list_json(client):
+    """GET /api/bookings/ returns JSON with the booking."""
+    rt, room = _make_room_pair("Single")
+    guest = Client.objects.create(first_name="JSON", last_name="User", email="j@x.com")
+    booking = create_booking(
+        room=room, client=guest, check_in=_dt.date(2026, 7, 1), check_out=_dt.date(2026, 7, 3)
+    )
+    resp = client.get("/api/bookings/")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, dict)
+    assert data["count"] == 1
+    assert any(b["id"] == booking.id for b in data["results"])
+
+
+@pytest.mark.django_db
+def test_booking_list_json_404_for_missing(client):
+    resp = client.get("/api/bookings/99999/")
+    assert resp.status_code == 404
