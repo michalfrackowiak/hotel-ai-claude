@@ -1184,3 +1184,51 @@ def test_booking_admin_combined_filters(client):
     body = resp.content.decode()
     assert "Double Guy" in body
     assert "Single Guy" not in body
+
+
+# ---------------------------------------------------------------------------
+# Room detail
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_booking_detail_renders(client):
+    """GET /api/bookings/<pk>/ renders the booking detail page."""
+    rt, room = _make_room_pair("Single")
+    guest = Client.objects.create(first_name="Detail", last_name="User", email="d@x.com")
+    booking = create_booking(
+        room=room, client=guest, check_in=_dt.date(2026, 7, 1), check_out=_dt.date(2026, 7, 3)
+    )
+    resp = client.get(f"/api/bookings/{booking.id}/")
+    assert resp.status_code == 200
+    assert "Detail User".encode() in resp.content
+
+
+@pytest.mark.django_db
+def test_booking_detail_404(client):
+    resp = client.get("/api/bookings/99999/")
+    assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Booking detail
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_booking_detail_renders(client):
+    """GET /api/bookings/<pk>/ renders the booking detail page."""
+    rt, room = _make_room_pair("Single")
+    guest = Client.objects.create(first_name="Detail", last_name="User", email="d@x.com")
+    booking = create_booking(
+        room=room, client=guest, check_in=_dt.date(2026, 7, 1), check_out=_dt.date(2026, 7, 3)
+    )
+    resp = client.get(f"/api/bookings/{booking.id}/")
+    assert resp.status_code == 200
+    assert "Detail User".encode() in resp.content
+
+
+@pytest.mark.django_db
+def test_booking_detail_404(client):
+    resp = client.get("/api/bookings/99999/")
+    assert resp.status_code == 404
