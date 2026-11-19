@@ -50,11 +50,11 @@ class VoiceConversation:
         try:
             audio = base64.b64decode(audio_b64)
         except Exception as exc:  # pragma: no cover - defensive
-            return {"error": f"Invalid audio: {exc}", "text": "", "audio_b64": ""}
+            return {"error": f"Invalid audio: {exc}", "text": "", "audio_b64": "", "audio_mime": ""}
 
         transcript = self.transcribe(audio)
         if not transcript:
-            return {"error": "no_transcript", "text": "", "audio_b64": ""}
+            return {"error": "no_transcript", "text": "", "audio_b64": "", "audio_mime": ""}
 
         result = self.agent.handle_message(self.conversation, transcript)
         reply = result.text or ""
@@ -63,6 +63,7 @@ class VoiceConversation:
             "transcript": transcript,
             "text": reply,
             "audio_b64": base64.b64encode(audio_out).decode() if audio_out else "",
+            "audio_mime": "audio/mpeg" if audio_out else "",
             "action": result.action,
             "booking_id": result.booking_id,
             "error": result.error,

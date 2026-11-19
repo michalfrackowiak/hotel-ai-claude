@@ -115,6 +115,7 @@ def test_turn_full_flow_returns_audio():
     assert result["transcript"] == "book me a room"
     assert result["text"] == "Sure thing"
     assert result["audio_b64"] == base64.b64encode(b"\x00\x01").decode()
+    assert result["audio_mime"] == "audio/mpeg"
     assert result["action"] == "reply"
     assert result["error"] is None
 
@@ -132,6 +133,7 @@ def test_turn_propagates_agent_error():
         result = vc.turn(base64.b64encode(b"audio").decode())
     assert result["error"] == "no_provider"
     assert result["audio_b64"] == ""
+    assert result["audio_mime"] == ""
 
 
 @pytest.mark.django_db

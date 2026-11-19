@@ -188,7 +188,7 @@
               if (data.transcript) appendTranscript('guest', data.transcript);
               if (data.text) appendTranscript('agent', data.text);
               if (data.audio_b64) {
-                playAudio(data.audio_b64);
+                playAudio(data.audio_b64, data.audio_mime || 'audio/mpeg');
               } else {
                 // Text-only response — bounce briefly
                 bouncingBalls.classList.add('active');
@@ -226,8 +226,8 @@
       }
     }
 
-    function playAudio(b64) {
-      const audio = new Audio('data:audio/webm;base64,' + b64);
+    function playAudio(b64, mime) {
+      const audio = new Audio('data:' + (mime || 'audio/mpeg') + ';base64,' + b64);
       audio.addEventListener('canplay', () => {
         showSpeaking();
       });
