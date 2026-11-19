@@ -342,8 +342,6 @@ class BookingNoShowView(APIView):
 
 def booking_admin(request):
     """Admin booking management page with filtering."""
-    if not request.user.is_staff:
-        return JsonResponse({"detail": "Staff access required."}, status=403)
 
     qs = Booking.objects.select_related("room", "room__room_type", "client").order_by("-check_in")
 
