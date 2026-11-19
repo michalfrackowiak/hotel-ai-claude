@@ -144,6 +144,59 @@ def test_no_show_booking_records_sync_attempt(hotel):
         no_show_booking(booking)
 
 
+@pytest.mark.django_db
+def test_resync_no_show_returns_skipped(hotel):
+    """No-show bookings return 'skipped' because there's nothing to delete."""
+    rc = ensure_room_calendar(hotel["room"])
+    conn = GoogleCalendarConnection.objects.create(google_user_email="n@h.com")
+    rc.connection = conn
+    rc.calendar_id = "primary"
+    rc.save()
+    client = APIClient()
+    booking = create_booking(
+        room=hotel["room"],
+        client=Client.objects.create(first_name="N", last_name="S"),
+        check_in=_dt.date(2026, 8, 1),
+        check_out=_dt.date(2026, 8, 3),
+    )
+    no_show_booking(booking)
+    resp = client.post(f"/api/calendar/sync/{booking.id}/")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "skipped"
+
+
+@pytest.mark.django_db
+def test_sync_event_update_is_called_when_event_exists(hotel):
+    """sync_booking calls update rather than insert when google_event_id exists."""
+    from unittest import mock
+
+    rc = ensure_room_calendar(hotel["room"])
+    conn = GoogleCalendarConnection.objects.create(google_user_email="u@h.com")
+    rc.connection = conn
+    rc.calendar_id = "cal-id"
+    rc.save()
+    booking = create_booking(
+        room=hotel["room"],
+        client=Client.objects.create(first_name="E", last_name="U"),
+        check_in=_dt.date(2026, 9, 1),
+        check_out=_dt.date(2026, 9, 3),
+    )
+    sync, _ = CalendarSync.objects.update_or_create(
+        booking=booking,
+        room_calendar=rc,
+        defaults={"google_event_id": "existing-eid", "status": "synced"},
+    )
+
+    with mock.patch("hotel_ai.calendar_integration.services._get_calendar_service") as svc:
+        events_mock = mock.MagicMock()
+        events_mock.update.return_value.execute.return_value = {"id": "eid"}
+        events_mock.insert.return_value.execute.return_value = {}
+        svc.return_value.events.return_value = events_mock
+        sync_booking(booking)
+        events_mock.update.assert_called_once()
+        events_mock.insert.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # API endpoints
 # ---------------------------------------------------------------------------
