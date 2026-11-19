@@ -152,3 +152,32 @@ def test_chat_turn_propagates_agent_error_and_booking_id(api_client):
     data = resp.json()
     assert data["action"] == "book"
     assert data["booking_id"] == 42
+
+
+@pytest.mark.django_db
+def test_chat_turn_invalid_language_falls_back_to_english(api_client):
+    """An unsupported language is normalized to 'en' inside the agent."""
+    with mock.patch("hotel_ai.chat.views.ReservationAgent") as MockAgent:
+        MockAgent.return_value.handle_message.return_value = _fake_result()
+        resp = api_client.post(
+            "/chat/turn/",
+            {"session_key": "bad-lang", "language": "fr", "message": "salut"},
+            format="json",
+        )
+    assert resp.status_code == 200
+    MockAgent.assert_called_once_with(language="fr")
+
+
+@pytest.mark.django_db
+def test_chat_turn_missing_session_key_is_generated(api_client):
+    """Omitting session_key still returns a usable one."""
+    with mock.patch("hotel_ai.chat.views.ReservationAgent") as MockAgent:
+        MockAgent.return_value.handle_message.return_value = _fake_result()
+        resp = api_client.post(
+            "/chat/turn/",
+            {"language": "en", "message": "hello"},
+            format="json",
+        )
+    assert resp.status_code == 200
+    assert resp.json()["session_key"]
+    assert Conversation.objects.filter(session_key=resp.json()["session_key"]).exists()
