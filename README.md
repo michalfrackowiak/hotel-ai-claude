@@ -8,7 +8,8 @@ Alpha version of an AI-powered hotel reception system with voice and chat reserv
 - **Text Chat**: Multi-turn conversational reservation flow
 - **Bilingual Support**: English and Polish via language parameter (`?lang=en|pl`)
 - **Room Management**: Single, Double, and Suite rooms with dynamic pricing
-- **Booking Engine**: Availability checking, booking creation, and cancellation
+- **Booking Engine**: Availability checking, booking creation, cancellation, check-in/out, and no-show marking
+- **Management Dashboard**: Visual room grid with real-time status tiles (available / confirmed / checked-in / no-show)
 - **AI Agents**: Tool-loop agent pattern for structured JSON responses
 - **Calendar Sync**: Best-effort Google Calendar integration (optional)
 - **Docker Deployment**: Single-container setup with gunicorn
@@ -57,13 +58,23 @@ Alpha version of an AI-powered hotel reception system with voice and chat reserv
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/` | GET | Homepage with language switcher |
+| `/dashboard/?lang=en|pl&date=YYYY-MM-DD` | GET | Management dashboard with room grid |
 | `/chat/?lang=en|pl` | GET | Chat UI |
 | `/chat/turn/` | POST | Chat message turn |
-| `/voice/` | GET | Voice call UI |
+| `/voice/?lang=en|pl` | GET | Voice call UI |
 | `/api/voice/turn/` | POST | Voice audio processing |
 | `/api/room-types/` | GET | List room types |
-| `/api/availability/` | GET/POST | Check availability |
+| `/api/rooms/` | GET | List rooms |
 | `/api/bookings/create/` | POST | Create booking |
+| `/api/bookings/` | GET | List bookings |
+| `/api/bookings/<id>/` | GET | Booking detail |
+| `/api/bookings/<id>/cancel/` | POST | Cancel booking |
+| `/api/bookings/<id>/check-in/` | POST | Check in guest |
+| `/api/bookings/<id>/check-out/` | POST | Check out guest |
+| `/api/bookings/<id>/no-show/` | POST | Mark no-show |
+| `/api/availability/stream/` | SSE | Real-time availability events |
+| `/api/admin/` | GET | Admin booking list |
+| `/api/calendar/feed/` | GET | iCal calendar export |
 | `/admin/` | GET | Django admin panel |
 
 ## Docker Deployment
