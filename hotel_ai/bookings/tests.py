@@ -298,6 +298,15 @@ def test_create_booking_rejects_equal_dates(double, client_fixture):
 @pytest.mark.django_db
 def test_create_booking_skips_calendar_on_sync_failure(double, client_fixture):
     """If calendar sync raises, booking still succeeds."""
+    from hotel_ai.calendar_integration.models import GoogleCalendarConnection
+    from hotel_ai.calendar_integration.services import ensure_room_calendar
+
+    rc = ensure_room_calendar(double[1])
+    conn = GoogleCalendarConnection.objects.create(google_user_email="fail@test.com")
+    rc.connection = conn
+    rc.calendar_id = "main"
+    rc.save()
+
     with mock.patch(
         "hotel_ai.calendar_integration.services._get_calendar_service",
         side_effect=RuntimeError("boom"),
@@ -315,6 +324,9 @@ def test_create_booking_skips_calendar_on_sync_failure(double, client_fixture):
 @pytest.mark.django_db
 def test_cancel_booking_skips_calendar_on_sync_failure(double, client_fixture):
     """Cancel must succeed even when calendar sync raises."""
+    from hotel_ai.calendar_integration.models import GoogleCalendarConnection
+    from hotel_ai.calendar_integration.services import ensure_room_calendar
+
     booking = create_booking(
         room=double[1],
         client=client_fixture,
@@ -322,6 +334,12 @@ def test_cancel_booking_skips_calendar_on_sync_failure(double, client_fixture):
         check_out=_dt.date(2027, 2, 2),
         guests=2,
     )
+    rc = ensure_room_calendar(double[1])
+    conn = GoogleCalendarConnection.objects.create(google_user_email="fail2@test.com")
+    rc.connection = conn
+    rc.calendar_id = "main"
+    rc.save()
+
     with mock.patch(
         "hotel_ai.calendar_integration.services._get_calendar_service",
         side_effect=RuntimeError("boom"),
@@ -333,6 +351,9 @@ def test_cancel_booking_skips_calendar_on_sync_failure(double, client_fixture):
 @pytest.mark.django_db
 def test_no_show_booking_skips_calendar_on_sync_failure(double, client_fixture):
     """No-show must succeed even when calendar sync raises."""
+    from hotel_ai.calendar_integration.models import GoogleCalendarConnection
+    from hotel_ai.calendar_integration.services import ensure_room_calendar
+
     booking = create_booking(
         room=double[1],
         client=client_fixture,
@@ -340,6 +361,12 @@ def test_no_show_booking_skips_calendar_on_sync_failure(double, client_fixture):
         check_out=_dt.date(2027, 3, 2),
         guests=2,
     )
+    rc = ensure_room_calendar(double[1])
+    conn = GoogleCalendarConnection.objects.create(google_user_email="fail3@test.com")
+    rc.connection = conn
+    rc.calendar_id = "main"
+    rc.save()
+
     with mock.patch(
         "hotel_ai.calendar_integration.services._get_calendar_service",
         side_effect=RuntimeError("boom"),
