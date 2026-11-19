@@ -62,6 +62,7 @@ from .services import (
     create_booking,
     effective_price,
     find_available_rooms,
+    no_show_booking,
     parse_date,
     resolve_client,
 )
@@ -310,6 +311,32 @@ class BookingCheckoutView(APIView):
         return JsonResponse({
             "booking": BookingSerializer(booking).data,
             "message": f"Booking {booking.id} checked out.",
+        })
+
+
+class BookingNoShowView(APIView):
+    """Mark a confirmed booking whose guest did not arrive as a no-show."""
+
+    permission_classes = [AllowAny]
+
+    def post(self, request, pk):
+        try:
+            booking = Booking.objects.select_related(
+                "room", "room__room_type", "client", "pricing_rule"
+            ).get(pk=pk)
+        except Booking.DoesNotExist:
+            return JsonResponse({"detail": "Booking not found"}, status=404)
+        if booking.status == BookingStatus.NO_SHOW:
+            return JsonResponse(
+                {"booking": BookingSerializer(booking).data, "message": "Already marked as no-show."}
+            )
+        try:
+            booking = no_show_booking(booking)
+        except ValueError as exc:
+            return JsonResponse({"detail": str(exc)}, status=400)
+        return JsonResponse({
+            "booking": BookingSerializer(booking).data,
+            "message": f"Booking {booking.id} marked as no-show.",
         })
 
 

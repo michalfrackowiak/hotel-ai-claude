@@ -796,6 +796,73 @@ def test_booking_activity_log_after_cancel(client):
 
 
 @pytest.mark.django_db
+def test_no_show_requires_confirmed(client):
+    """A no-show can only be applied to a confirmed booking."""
+    rt, room = _make_room_pair("Single")
+    payload = {
+        "room_type": rt.name,
+        "room_number": room.room_number,
+        "check_in": "2026-10-01",
+        "check_out": "2026-10-03",
+        "guests": 1,
+        "first_name": "Noa",
+        "last_name": "Show",
+    }
+    resp = client.post("/api/bookings/create/", json.dumps(payload), content_type="application/json")
+    booking_id = resp.json()["booking"]["id"]
+    client.post(f"/api/bookings/{booking_id}/check-in/")
+
+    # Already checked in -> no-show is rejected.
+    resp2 = client.post(f"/api/bookings/{booking_id}/no-show/")
+    assert resp2.status_code == 400
+
+
+@pytest.mark.django_db
+def test_no_show_marks_booking_and_logs(client):
+    """POST /api/bookings/<pk>/no-show/ sets NO_SHOW and appends a log entry."""
+    rt, room = _make_room_pair("Single")
+    payload = {
+        "room_type": rt.name,
+        "room_number": room.room_number,
+        "check_in": "2026-10-01",
+        "check_out": "2026-10-03",
+        "guests": 1,
+        "first_name": "Noa",
+        "last_name": "Show",
+    }
+    resp = client.post("/api/bookings/create/", json.dumps(payload), content_type="application/json")
+    booking_id = resp.json()["booking"]["id"]
+
+    resp2 = client.post(f"/api/bookings/{booking_id}/no-show/")
+    assert resp2.status_code == 200
+    assert resp2.json()["booking"]["status"] == "no_show"
+    logs = list(Booking.objects.get(pk=booking_id).logs.order_by("created_at"))
+    assert logs[-1].action == "no_show"
+
+
+@pytest.mark.django_db
+def test_no_show_is_idempotent(client):
+    """Marking an already no-show'd booking again is a no-op."""
+    rt, room = _make_room_pair("Single")
+    payload = {
+        "room_type": rt.name,
+        "room_number": room.room_number,
+        "check_in": "2026-10-01",
+        "check_out": "2026-10-03",
+        "guests": 1,
+        "first_name": "Noa",
+        "last_name": "Show",
+    }
+    resp = client.post("/api/bookings/create/", json.dumps(payload), content_type="application/json")
+    booking_id = resp.json()["booking"]["id"]
+    client.post(f"/api/bookings/{booking_id}/no-show/")
+
+    resp2 = client.post(f"/api/bookings/{booking_id}/no-show/")
+    assert resp2.status_code == 200
+    assert "Already marked" in resp2.json()["message"]
+
+
+@pytest.mark.django_db
 def test_booking_activity_api_returns_timeline(client):
     """GET /api/bookings/<pk>/activity/ returns the full timeline."""
     rt, room = _make_room_pair("Single")
