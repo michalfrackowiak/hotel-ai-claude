@@ -181,3 +181,19 @@ def test_chat_turn_missing_session_key_is_generated(api_client):
     assert resp.status_code == 200
     assert resp.json()["session_key"]
     assert Conversation.objects.filter(session_key=resp.json()["session_key"]).exists()
+
+
+@pytest.mark.django_db
+def test_chat_turn_updates_existing_session_language(api_client):
+    """When an existing session has a different language, it gets updated."""
+    conv = Conversation.objects.create(session_key="lang-update", channel="chat", language="en")
+    with mock.patch("hotel_ai.chat.views.ReservationAgent") as MockAgent:
+        MockAgent.return_value.handle_message.return_value = _fake_result()
+        resp = api_client.post(
+            "/chat/turn/",
+            {"session_key": "lang-update", "language": "pl", "message": "cześć"},
+            format="json",
+        )
+    assert resp.status_code == 200
+    conv.refresh_from_db()
+    assert conv.language == "pl"

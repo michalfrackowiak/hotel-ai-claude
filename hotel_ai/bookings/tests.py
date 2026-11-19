@@ -7,6 +7,8 @@ import json
 import uuid
 from decimal import Decimal
 
+from unittest import mock
+
 import pytest
 
 from hotel_ai.bookings.models import Booking, BookingLog, BookingStatus, Client, PricingRule, Room, RoomType
@@ -20,6 +22,7 @@ from hotel_ai.bookings.services import (
     find_available_rooms,
     no_show_booking,
     overlapping_bookings,
+    parse_date,
     resolve_client,
 )
 
@@ -227,6 +230,122 @@ def test_availability_summary_shape(double):
     by_name = {row["room_type"]: row for row in summary}
     assert by_name.get("Double") is not None or any(r["capacity"] >= 2 for r in summary)
     assert any(r.get("available") for r in summary)
+
+
+@pytest.mark.django_db
+def test_find_available_rooms_empty_on_invalid_range(double):
+    """When check_out <= check_in, no rooms are returned."""
+    rooms = find_available_rooms(
+        room_type=double[0], check_in=_dt.date(2026, 7, 3), check_out=_dt.date(2026, 7, 1)
+    )
+    assert rooms == []
+
+
+@pytest.mark.django_db
+def test_find_available_rooms_filters_by_room_type():
+    rt_single, room_single = _make_room_pair("Single")
+    rt_double, room_double = _make_room_pair("Double")
+    available = find_available_rooms(
+        room_type=rt_double, check_in=_dt.date(2026, 9, 1), check_out=_dt.date(2026, 9, 2)
+    )
+    assert room_single not in available
+    assert room_double in available
+
+
+@pytest.mark.django_db
+def test_find_available_rooms_skips_overcapacity_rooms():
+    """Rooms with insufficient capacity are skipped from the list."""
+    rt_small = RoomType.objects.create(name="Tiny", base_price_per_night=Decimal("150.00"), capacity=1)
+    rt_big = RoomType.objects.create(name="Huge", base_price_per_night=Decimal("400.00"), capacity=4)
+    room_small = Room.objects.create(room_number="T-1", room_type=rt_small, floor=1)
+    room_big = Room.objects.create(room_number="H-1", room_type=rt_big, floor=1)
+    available = find_available_rooms(check_in=_dt.date(2026, 9, 1), check_out=_dt.date(2026, 9, 2), guests=3)
+    assert room_small not in available
+    assert room_big in available
+
+
+def test_parse_date_rejects_invalid():
+    with pytest.raises(ValueError, match="Invalid date"):
+        parse_date("not-a-date")
+
+
+@pytest.mark.django_db
+def test_create_booking_rejects_over_capacity(double, client_fixture):
+    """Requesting more guests than the room holds raises ValueError."""
+    with pytest.raises(ValueError, match="Room capacity"):
+        create_booking(
+            room=double[1],
+            client=client_fixture,
+            check_in=_dt.date(2026, 12, 1),
+            check_out=_dt.date(2026, 12, 2),
+            guests=5,
+        )
+
+
+@pytest.mark.django_db
+def test_create_booking_rejects_equal_dates(double, client_fixture):
+    """A stay with zero nights must be rejected by the service layer."""
+    with pytest.raises(ValueError, match="check_out must be after check_in"):
+        create_booking(
+            room=double[1],
+            client=client_fixture,
+            check_in=_dt.date(2026, 12, 1),
+            check_out=_dt.date(2026, 12, 1),
+            guests=2,
+        )
+
+
+@pytest.mark.django_db
+def test_create_booking_skips_calendar_on_sync_failure(double, client_fixture):
+    """If calendar sync raises, booking still succeeds."""
+    with mock.patch(
+        "hotel_ai.calendar_integration.services._get_calendar_service",
+        side_effect=RuntimeError("boom"),
+    ):
+        booking = create_booking(
+            room=double[1],
+            client=client_fixture,
+            check_in=_dt.date(2027, 1, 1),
+            check_out=_dt.date(2027, 1, 2),
+            guests=2,
+        )
+        assert booking.status == BookingStatus.CONFIRMED
+
+
+@pytest.mark.django_db
+def test_cancel_booking_skips_calendar_on_sync_failure(double, client_fixture):
+    """Cancel must succeed even when calendar sync raises."""
+    booking = create_booking(
+        room=double[1],
+        client=client_fixture,
+        check_in=_dt.date(2027, 2, 1),
+        check_out=_dt.date(2027, 2, 2),
+        guests=2,
+    )
+    with mock.patch(
+        "hotel_ai.calendar_integration.services._get_calendar_service",
+        side_effect=RuntimeError("boom"),
+    ):
+        cancel_booking(booking)
+    assert booking.status == BookingStatus.CANCELLED
+
+
+@pytest.mark.django_db
+def test_no_show_booking_skips_calendar_on_sync_failure(double, client_fixture):
+    """No-show must succeed even when calendar sync raises."""
+    booking = create_booking(
+        room=double[1],
+        client=client_fixture,
+        check_in=_dt.date(2027, 3, 1),
+        check_out=_dt.date(2027, 3, 2),
+        guests=2,
+    )
+    with mock.patch(
+        "hotel_ai.calendar_integration.services._get_calendar_service",
+        side_effect=RuntimeError("boom"),
+    ):
+        no_show_booking(booking)
+    assert booking.status == BookingStatus.NO_SHOW
 
 
 # ---------------------------------------------------------------------------
@@ -1282,6 +1401,36 @@ def test_booking_list_json(client):
 def test_booking_list_json_404_for_missing(client):
     resp = client.get("/api/bookings/99999/")
     assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_resolve_client_updates_existing_phone():
+    from hotel_ai.bookings.services import resolve_client
+
+    client = Client.objects.create(first_name="Ada", last_name="Lovelace", email="ada@x.com")
+    updated = resolve_client(
+        first_name="Ada", last_name="Lovelace", email="ada@x.com", phone="+1-555"
+    )
+    assert updated.id == client.id
+    assert updated.phone == "+1-555"
+
+
+@pytest.mark.django_db
+def test_resolve_client_updates_language_on_en_base():
+    from hotel_ai.bookings.services import resolve_client
+
+    client = Client.objects.create(first_name="Mira", last_name="Costa", email="mira@x.com", language="en")
+    updated = resolve_client(
+        first_name="Mira", last_name="Costa", email="mira@x.com", language="pl"
+    )
+    assert updated.language == "pl"
+
+
+@pytest.mark.django_db
+def test_calculate_total_returns_zero_for_zero_nights(double):
+    from hotel_ai.bookings.services import calculate_total
+
+    assert calculate_total(double[0], _dt.date(2026, 7, 3), _dt.date(2026, 7, 3)) == Decimal("0.00")
 
 
 # ---------------------------------------------------------------------------
