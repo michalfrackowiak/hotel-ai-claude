@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as _dt
 import json
 from decimal import Decimal
+from unittest import mock
 
 import pytest
 
@@ -399,3 +400,154 @@ def test_agent_lookup_booking_by_name():
     # The exact outcome depends on LLM parsing, but the tool route should
     # be discoverable via the system prompt and the booking exists.
     assert Booking.objects.filter(id=booking.id).exists()
+
+
+# ---------------------------------------------------------------------------
+# OpenAI provider (mocked client)
+# ---------------------------------------------------------------------------
+def _fake_chat_response(content):
+    """Build a fake OpenAI ChatCompletion-shaped object."""
+
+    class _Choice:
+        def __init__(self, content):
+            self.message = type("Msg", (), {"content": content})()
+
+    return type("Resp", (), {"choices": [_Choice(content)]})()
+
+
+def _fake_audio_response(text):
+    return type("Audio", (), {"text": text})()
+
+
+def _fake_speech_response(content):
+    return type("Speech", (), {"content": content})()
+
+
+def _openai_provider():
+    from .openai_provider import OpenAIProvider
+
+    return OpenAIProvider(
+        {"provider_type": "openai", "model": "gpt-4o-mini", "api_key": "sk-test"}
+    )
+
+
+def test_openai_chat_success():
+    provider = _openai_provider()
+    with mock.patch.object(provider, "_client") as mock_client:
+        mock_client.return_value.chat.completions.create.return_value = _fake_chat_response("hello")
+        assert provider.chat([{"role": "user", "content": "hi"}]) == "hello"
+
+
+def test_openai_chat_failure_raises_ai_provider_error():
+    from .base import AIProviderError
+    import openai
+
+    provider = _openai_provider()
+    with mock.patch.object(provider, "_client") as mock_client:
+        mock_client.return_value.chat.completions.create.side_effect = openai.OpenAIError("boom")
+        with pytest.raises(AIProviderError):
+            provider.chat([{"role": "user", "content": "hi"}])
+
+
+def test_openai_stream_chat_yields_chunks():
+    provider = _openai_provider()
+
+    class _Delta:
+        def __init__(self, content):
+            self.content = content
+
+    class _Choice:
+        def __init__(self, content):
+            self.delta = _Delta(content)
+
+    class _Chunk:
+        def __init__(self, content):
+            self.choices = [_Choice(content)]
+
+    stream = [_Chunk("Hello "), _Chunk("world"), _Chunk(None)]
+    with mock.patch.object(provider, "_client") as mock_client:
+        mock_client.return_value.chat.completions.create.return_value = iter(stream)
+        chunks = list(
+            provider.stream_chat([{"role": "user", "content": "hi"}])
+        )
+    assert chunks == ["Hello ", "world"]
+
+
+def test_openai_stream_chat_skips_empty_choices():
+    provider = _openai_provider()
+
+    class _Chunk:
+        def __init__(self, choices):
+            self.choices = choices
+
+    stream = [_Chunk([]), _Chunk([type("C", (), {"delta": type("D", (), {"content": "x"})()})()])]
+    with mock.patch.object(provider, "_client") as mock_client:
+        mock_client.return_value.chat.completions.create.return_value = iter(stream)
+        assert list(provider.stream_chat([{"role": "user", "content": "hi"}])) == ["x"]
+
+
+def test_openai_transcribe_success():
+    provider = _openai_provider()
+    with mock.patch.object(provider, "_client") as mock_client:
+        mock_client.return_value.audio.transcriptions.create.return_value = _fake_audio_response("hello world")
+        assert provider.transcribe(b"audio") == "hello world"
+
+
+def test_openai_transcribe_failure_raises():
+    from .base import AIProviderError
+    import openai
+
+    provider = _openai_provider()
+    with mock.patch.object(provider, "_client") as mock_client:
+        mock_client.return_value.audio.transcriptions.create.side_effect = openai.OpenAIError("nope")
+        with pytest.raises(AIProviderError):
+            provider.transcribe(b"audio")
+
+
+def test_openai_speak_success():
+    provider = _openai_provider()
+    with mock.patch.object(provider, "_client") as mock_client:
+        mock_client.return_value.audio.speech.create.return_value = _fake_speech_response(b"\x00\x01")
+        assert provider.speak("hello") == b"\x00\x01"
+
+
+def test_openai_speak_failure_raises():
+    from .base import AIProviderError
+    import openai
+
+    provider = _openai_provider()
+    with mock.patch.object(provider, "_client") as mock_client:
+        mock_client.return_value.audio.speech.create.side_effect = openai.OpenAIError("nope")
+        with pytest.raises(AIProviderError):
+            provider.speak("hello")
+
+
+def test_openai_client_uses_base_url_when_set():
+    from .openai_provider import OpenAIProvider
+
+    provider = OpenAIProvider(
+        {
+            "provider_type": "openai",
+            "model": "gpt-4o-mini",
+            "api_key": "sk-test",
+            "base_url": "http://ollama:11434/v1",
+        }
+    )
+    with mock.patch("hotel_ai.ai_providers.openai_provider.openai.OpenAI") as mock_openai:
+        provider._client()
+        _, kwargs = mock_openai.call_args
+        assert kwargs["base_url"] == "http://ollama:11434/v1"
+        assert kwargs["api_key"] == "sk-test"
+        assert kwargs["timeout"] == 30
+
+
+def test_openai_client_omits_base_url_when_empty():
+    from .openai_provider import OpenAIProvider
+
+    provider = OpenAIProvider(
+        {"provider_type": "openai", "model": "gpt-4o-mini", "api_key": "sk-test"}
+    )
+    with mock.patch("hotel_ai.ai_providers.openai_provider.openai.OpenAI") as mock_openai:
+        provider._client()
+        _, kwargs = mock_openai.call_args
+        assert "base_url" not in kwargs
