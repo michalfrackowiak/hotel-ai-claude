@@ -25,6 +25,7 @@ from hotel_ai.bookings.models import Booking, BookingStatus, RoomType
 from hotel_ai.bookings.services import (
     availability_summary,
     calculate_total,
+    cancel_booking,
     check_in_booking,
     check_out_booking,
     create_booking,
@@ -55,11 +56,14 @@ or, to check in a guest:
   {{"action": "check_in", "args": {{"booking_id": 123}}}}
 or, to check out a guest:
   {{"action": "check_out", "args": {{"booking_id": 123}}}}
+or, to cancel a booking:
+  {{"action": "cancel", "args": {{"booking_id": 123}}}}
 
 Rules:
 - Before booking, you must know: dates, guests, and the guest's name (+ email or phone).
 - Always confirm the details with the guest before the "book" action.
 - Use "booking_id" for check-in / check-out; if the guest only gives a name, ask for the booking id first.
+- Use "cancel" to cancel a booking; confirm with the guest first and only cancel confirmed bookings.
 - If the guest speaks Polish, still reply with JSON but write the text in Polish.
 """
 
@@ -78,6 +82,7 @@ Wzory JSON:
 {{"action":"book","args":{{"room_type":"Double","check_in":"YYYY-MM-DD","check_out":"YYYY-MM-DD","guests":2,"first_name":"...","last_name":"...","email":"...","phone":"..."}}}}
 {{"action":"check_in","args":{{"booking_id":123}}}}
 {{"action":"check_out","args":{{"booking_id":123}}}}
+{{"action":"cancel","args":{{"booking_id":123}}}}
 
 Zasady biznesowe:
 - Przed rezerwacją musisz znać: daty, liczbę gości, imię i nazwisko gościa (+ e-mail lub telefon).
@@ -85,6 +90,7 @@ Zasady biznesowe:
 - Jeśli brakuje pokoju o podanej pojemności, powiedz to naturalnie i zaproponuj alternatywę.
 - Poprawiaj gościa łagodnie, gdy się myli.
 - Używaj naturalnych sformułowań: Dzień dobry, Jasne, Chwila, Zrobimy to, Proszę bardzo.
+- Używaj akcji "cancel", aby anulować rezerwację — potwierdź z gościem przed anulowaniem.
 - Nigdy nie odpowiadaj po angielsku — zawsze po polsku.
 """
 
@@ -183,6 +189,8 @@ class ReservationAgent:
                 outcome = self._run_check_in(args)
             elif action == "check_out":
                 outcome = self._run_check_out(args)
+            elif action == "cancel":
+                outcome = self._run_cancel(args)
             else:
                 outcome = f"Unknown action '{action}'."
 
@@ -305,6 +313,32 @@ class ReservationAgent:
             booking = check_out_booking(booking)
         except ValueError as exc:
             return f"Check-out failed: {exc}"
+        return json.dumps(
+            {
+                "status": booking.status,
+                "booking_id": booking.id,
+                "room": booking.room.room_number,
+                "guest": booking.client.full_name,
+            },
+            ensure_ascii=False,
+        )
+
+    def _run_cancel(self, args: dict) -> str:
+        booking = self._lookup_booking(args)
+        if isinstance(booking, str):
+            return booking
+        if booking.status == "cancelled":
+            return json.dumps(
+                {
+                    "status": booking.status,
+                    "booking_id": booking.id,
+                    "room": booking.room.room_number,
+                    "guest": booking.client.full_name,
+                    "message": "Already cancelled.",
+                },
+                ensure_ascii=False,
+            )
+        booking = cancel_booking(booking)
         return json.dumps(
             {
                 "status": booking.status,
