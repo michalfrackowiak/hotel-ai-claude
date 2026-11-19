@@ -82,7 +82,7 @@ tr:hover td { background:#f8f9fa; }
       {% for room in group.rooms %}
       <a href="#" data-booking-id="{{ room.booking_id|default:"" }}" data-status="{{ room.status|default:"available" }}"
          onclick="event.preventDefault(); toggleRoom(this)"
-         style="display:inline-flex;align-items:center;justify-content:center;width:64px;height:64px;border-radius:8px;font-weight:700;font-size:1rem;text-decoration:none;cursor:pointer;border:2px solid {% if room.occupied %}{% if room.status == 'checked_in' %}#fa9c33{% else %}#ea4335{% endif %}{% else %}#34a853{% endif %};color:white;background:{% if room.occupied %}#333{% else %}#e8f5e9{% endif %}">
+         style="display:inline-flex;align-items:center;justify-content:center;width:64px;height:64px;border-radius:8px;font-weight:700;font-size:1rem;text-decoration:none;cursor:pointer;border:2px solid {% if room.occupied %}{% if room.status == 'checked_in' %}#fa9c33{% elif room.status == 'no_show' %}#6c757d{% else %}#ea4335{% endif %}{% else %}#34a853{% endif %};color:white;background:{% if room.occupied %}{% if room.status == 'no_show' %}#f8f9fa{% elif room.status == 'checked_in' %}#fff3e0{% else %}#fce4ec{% endif %}{% else %}#e8f5e9{% endif %}">
         {{ room.number }}
       </a>
       {% endfor %}
@@ -153,8 +153,8 @@ tr:hover td { background:#f8f9fa; }
   </table>
 </div>
 <script>
-const roomColors = { checked_in: '#fa9c33', confirmed: '#ea4335', available: '#34a853' };
-const roomBg   = { checked_in: '#fff3e0', confirmed: '#fce4ec', available: '#e8f5e9' };
+const roomColors = { checked_in: '#fa9c33', confirmed: '#ea4335', no_show: '#6c757d', available: '#34a853' };
+const roomBg   = { checked_in: '#fff3e0', confirmed: '#fce4ec', no_show: '#f8f9fa', available: '#e8f5e9' };
 
 function toggleRoom(el) {
   const bookingId = el.dataset.bookingId;

@@ -32,12 +32,13 @@ def dashboard(request):
     room_types = list(RoomType.objects.all())
 
     # Count occupied rooms on selected date (active bookings overlapping the date)
+    # No-shows don't occupy rooms — the room is available for re-booking.
     occupied_room_ids = set(
         Booking.objects.filter(
             check_in__lte=selected_date,
             check_out__gt=selected_date,
         )
-        .exclude(status="cancelled")
+        .exclude(status__in=["cancelled", "no_show"])
         .values_list("room_id", flat=True)
     )
     occupied_rooms = len(occupied_room_ids)
