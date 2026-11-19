@@ -1208,3 +1208,50 @@ def test_booking_detail_renders(client):
 def test_booking_detail_404(client):
     resp = client.get("/api/bookings/99999/")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Booking lookup
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_booking_lookup_renders(client):
+    """GET /api/booking/<pk>/ renders the public booking lookup page."""
+    rt, room = _make_room_pair("Single")
+    guest = Client.objects.create(first_name="Lookup", last_name="User", email="l@x.com")
+    booking = create_booking(
+        room=room, client=guest, check_in=_dt.date(2026, 7, 1), check_out=_dt.date(2026, 7, 3)
+    )
+    resp = client.get(f"/api/booking/{booking.id}/")
+    assert resp.status_code == 200
+    assert "Lookup User".encode() in resp.content
+
+
+@pytest.mark.django_db
+def test_booking_lookup_404(client):
+    resp = client.get("/api/booking/99999/")
+    assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Room list
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_room_list_renders(client):
+    """GET /api/rooms/ lists active rooms."""
+    rt, room = _make_room_pair("Single")
+    resp = client.get("/api/rooms/")
+    assert resp.status_code == 200
+    assert room.room_number.encode() in resp.content
+
+
+@pytest.mark.django_db
+def test_room_list_excludes_inactive(client):
+    rt = RoomType.objects.create(name="Inact", base_price_per_night=100, capacity=1)
+    Room.objects.create(room_number="INACT-1", room_type=rt, floor=1, is_active=False)
+    resp = client.get("/api/rooms/")
+    assert resp.status_code == 200
+    assert b"INACT-1" not in resp.content
