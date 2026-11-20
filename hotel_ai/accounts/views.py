@@ -32,11 +32,17 @@ class ProfileView(View):
             .select_related("room", "room__room_type", "client")
             .order_by("-check_in")
         )
+        lang = self._lang(request)
         return render(
             request,
             self.template_name,
-            {"profile": profile, "bookings": bookings},
+            {"profile": profile, "bookings": bookings, "lang": lang, "section": "profile"},
         )
+
+    @staticmethod
+    def _lang(request) -> str:
+        """Resolve the portal language from query string, then profile."""
+        return request.GET.get("lang") or request.user.profile.language or "en"
 
 
 @method_decorator(login_required, name="dispatch")
@@ -51,9 +57,18 @@ class ProfileUpdateView(UpdateView):
     def get_object(self, queryset=None):
         return self.request.user.profile
 
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["lang"] = self._lang()
+        ctx["section"] = "settings"
+        return ctx
+
     def form_valid(self, form):
         messages.success(self.request, "Profile updated.")
         return super().form_valid(form)
+
+    def _lang(self) -> str:
+        return self.request.GET.get("lang") or self.request.user.profile.language or "en"
 
 
 @method_decorator(login_required, name="dispatch")
@@ -73,10 +88,22 @@ class PasswordChangeView(View):
         return view(request, *args, **kwargs)
 
     def get(self, request, *args, **kwargs):
+        self._inject_lang_and_section(request)
         return self._dispatch(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
+        self._inject_lang_and_section(request)
         return self._dispatch(request, *args, **kwargs)
+
+    @staticmethod
+    def _inject_lang_and_section(request) -> None:
+        """Attach lang/section to request so the base nav highlights correctly."""
+        lang = request.GET.get("lang") or request.user.profile.language or "en"
+        request.session["_portal_lang"] = lang
+        request.session["_portal_section"] = "password"
+        if lang != "en":
+            # Rebuild success_url with the language query param so allauth redirects honor it.
+            request.success_url = f"/accounts/profile/?lang={lang}"
 
 
 @method_decorator(login_required, name="dispatch")
@@ -96,9 +123,15 @@ class BookingLinkView(View):
         )
         if booking.owner is not None and booking.owner != request.user:
             messages.error(request, "That booking is already linked to another account.")
-            return redirect("accounts:profile")
+            return redirect(self._profile_url(request))
         booking.owner = request.user
         booking.save(update_fields=["owner"])
         request.user.profile.link_client(booking.client)
         messages.success(request, "Booking linked to your account.")
-        return redirect("accounts:profile")
+        return redirect(self._profile_url(request))
+
+    @staticmethod
+    def _profile_url(request) -> str:
+        """Preserve the portal language across the redirect."""
+        lang = request.GET.get("lang") or request.user.profile.language or "en"
+        return f"/accounts/profile/?lang={lang}"

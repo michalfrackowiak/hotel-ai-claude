@@ -1,36 +1,37 @@
 {% extends "accounts/base.html" %}
+{% load i18n %}
 
 {% block content %}
-  <h1 class="page-title">My Bookings</h1>
+  <h1 class="page-title">{% if lang == "pl" %}Moje rezerwacje{% else %}My Bookings{% endif %}</h1>
 
   <div class="card">
-    <h2>Account</h2>
+    <h2>{% if lang == "pl" %}Konto{% else %}Account{% endif %}</h2>
     <div class="field-row">
-      <span class="label">Username</span>
+      <span class="label">{% if lang == "pl" %}Użytkownik{% else %}Username{% endif %}</span>
       <span class="value">{{ profile.user.get_username }}</span>
     </div>
     <div class="field-row">
-      <span class="label">Phone</span>
+      <span class="label">{% if lang == "pl" %}Telefon{% else %}Phone{% endif %}</span>
       <span class="value">{{ profile.phone|default:"—" }}</span>
     </div>
     <div class="field-row">
-      <span class="label">Language</span>
-      <span class="value">{{ profile.language }}</span>
+      <span class="label">{% if lang == "pl" %}Język{% else %}Language{% endif %}</span>
+      <span class="value">{% if profile.language == "pl" %}Polski{% else %}English{% endif %}</span>
     </div>
   </div>
 
   <div class="card">
-    <h2>Your reservations</h2>
+    <h2>{% if lang == "pl" %}Twoje rezerwacje{% else %}Your reservations{% endif %}</h2>
     <div class="table-scroll">
       <table>
         <thead>
           <tr>
-            <th>Room</th>
-            <th>Check-in</th>
-            <th>Check-out</th>
-            <th>Guests</th>
-            <th>Total</th>
-            <th>Status</th>
+            <th>{% if lang == "pl" %}Pokój{% else %}Room{% endif %}</th>
+            <th>{% if lang == "pl" %}Zameldowanie{% else %}Check-in{% endif %}</th>
+            <th>{% if lang == "pl" %}Wymeldowanie{% else %}Check-out{% endif %}</th>
+            <th>{% if lang == "pl" %}Goście{% else %}Guests{% endif %}</th>
+            <th>{% if lang == "pl" %}Razem{% else %}Total{% endif %}</th>
+            <th>{% if lang == "pl" %}Status{% else %}Status{% endif %}</th>
           </tr>
         </thead>
         <tbody>
@@ -44,7 +45,7 @@
             <td><span class="badge">{{ b.get_status_display }}</span></td>
           </tr>
           {% empty %}
-          <tr><td colspan="6" class="empty">You have no bookings yet. Book a room through our AI reception or link an existing booking.</td></tr>
+          <tr><td colspan="6" class="empty">{% if lang == "pl" %}Nie masz jeszcze rezerwacji. Zarezerwuj pokój przez naszego AI lub powiąż istniejącą rezerację.{% else %}You have no bookings yet. Book a room through our AI reception or link an existing booking.{% endif %}</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -52,14 +53,14 @@
   </div>
 
   <div class="card">
-    <h2>Link a booking you already made</h2>
+    <h2>{% if lang == "pl" %}Powiąż rezerację{% else %}Link a booking you already made{% endif %}</h2>
     <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">
-      Made a booking via chat, voice, or the front desk? Enter its ID to attach it to this account so it shows up here.
+      {% if lang == "pl" %}Zrobiliście rezerwację przez czat, głos lub recepcję? Wpisz jej numer, aby dodać ją do tego konta.{% else %}Made a booking via chat, voice, or the front desk? Enter its ID to attach it to this account so it shows up here.{% endif %}
     </p>
     <form method="post" action="{% url 'accounts:booking-link' booking_id=0 %}" style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
       <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
-      <input type="number" name="booking_id" id="linkBookingId" min="1" placeholder="Booking ID (e.g. 42)" style="padding: 0.6rem 0.75rem; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem;">
-      <button type="button" class="btn btn-primary" onclick="linkBooking()">Link booking</button>
+      <input type="number" name="booking_id" id="linkBookingId" min="1" placeholder="{% if lang == "pl" %}Numer rezerwacji (np. 42){% else %}Booking ID (e.g. 42){% endif %}" style="padding: 0.6rem 0.75rem; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem;">
+      <button type="button" class="btn btn-primary" onclick="linkBooking()">{% if lang == "pl" %}Powiąż rezerację{% else %}Link booking{% endif %}</button>
     </form>
   </div>
 

@@ -67,14 +67,14 @@
       <div class="logo-icon">A</div>
       <div class="logo-text">
         <h1>Hotel Aurora</h1>
-        <span>Guest Portal</span>
+        <span>{% if lang == "pl" %}Portal gościa{% else %}Guest Portal{% endif %}</span>
       </div>
     </a>
     <nav class="nav-links">
-      <a href="{% url 'accounts:profile' %}" class="{% if section == 'profile' %}active{% endif %}">My Bookings</a>
-      <a href="{% url 'accounts:profile-update' %}" class="{% if section == 'settings' %}active{% endif %}">Settings</a>
-      <a href="{% url 'account_change_password' %}" class="{% if section == 'password' %}active{% endif %}">Password</a>
-      <a href="{% url 'account_logout' %}" class="logout-btn">Sign out</a>
+      <a href="{% url 'accounts:profile' %}{% if lang %}?lang={{ lang }}{% endif %}" class="{% if section == 'profile' %}active{% endif %}">{% if lang == "pl" %}Moje rezerwacje{% else %}My Bookings{% endif %}</a>
+      <a href="{% url 'accounts:profile-update' %}{% if lang %}?lang={{ lang }}{% endif %}" class="{% if section == 'settings' %}active{% endif %}">{% if lang == "pl" %}Ustawienia{% else %}Settings{% endif %}</a>
+      <a href="{% url 'account_change_password' %}{% if lang %}?lang={{ lang }}{% endif %}" class="{% if section == 'password' %}active{% endif %}">{% if lang == "pl" %}Hasło{% else %}Password{% endif %}</a>
+      <a href="{% url 'account_logout' %}" class="logout-btn">{% if lang == "pl" %}Wyloguj się{% else %}Sign out{% endif %}</a>
     </nav>
   </header>
 
