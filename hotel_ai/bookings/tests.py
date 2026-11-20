@@ -128,6 +128,58 @@ def test_pricing_rule_overrides_base(double):
 
 
 @pytest.mark.django_db
+def test_pricing_rule_clean_rejects_inverted_dates(double):
+    """PricingRule.clean raises when ends_at precedes starts_at."""
+    from django.core.exceptions import ValidationError
+
+    rule = PricingRule(
+        name="Bad",
+        room_type=double[0],
+        starts_at=_dt.date(2026, 8, 31),
+        ends_at=_dt.date(2026, 6, 1),
+        price_per_night=Decimal("300.00"),
+        priority=10,
+    )
+    with pytest.raises(ValidationError, match="ends_at must be >= starts_at"):
+        rule.clean()
+
+
+@pytest.mark.django_db
+def test_booking_clean_rejects_short_stay(double, client_fixture):
+    """Booking.clean raises when the stay is shorter than one night."""
+    from django.core.exceptions import ValidationError
+
+    booking = Booking(
+        room=double[1],
+        client=client_fixture,
+        check_in=_dt.date(2027, 1, 1),
+        check_out=_dt.date(2027, 1, 2),
+    )
+    # Force the nights property to 0 so the minimum-stay guard is exercised
+    # independently of the check_out <= check_in guard above it.
+    with mock.patch.object(Booking, "nights", new_callable=mock.PropertyMock) as nights_mock:
+        nights_mock.return_value = 0
+        with pytest.raises(ValidationError, match="Minimum stay is one night"):
+            booking.clean()
+
+
+@pytest.mark.django_db
+def test_booking_clean_rejects_overcapacity(double, client_fixture):
+    """Booking.clean raises when the guest count exceeds room capacity."""
+    from django.core.exceptions import ValidationError
+
+    booking = Booking(
+        room=double[1],
+        client=client_fixture,
+        check_in=_dt.date(2027, 1, 1),
+        check_out=_dt.date(2027, 1, 2),
+        guests=99,  # Double room capacity is 2
+    )
+    with pytest.raises(ValidationError, match="Room capacity is"):
+        booking.clean()
+
+
+@pytest.mark.django_db
 def test_calculate_total_spans_rule_boundaries(double):
     PricingRule.objects.create(
         name="Summer",
@@ -298,19 +350,10 @@ def test_create_booking_rejects_equal_dates(double, client_fixture):
 @pytest.mark.django_db
 def test_create_booking_skips_calendar_on_sync_failure(double, client_fixture):
     """If calendar sync raises, booking still succeeds."""
-    from hotel_ai.calendar_integration.models import GoogleCalendarConnection
-    from hotel_ai.calendar_integration.services import ensure_room_calendar
-
-    rc = ensure_room_calendar(double[1])
-    conn = GoogleCalendarConnection.objects.create(google_user_email="fail@test.com")
-    rc.connection = conn
-    rc.calendar_id = "main"
-    rc.save()
-
     with mock.patch(
-        "hotel_ai.calendar_integration.services._get_calendar_service",
+        "hotel_ai.calendar_integration.services.sync_booking",
         side_effect=RuntimeError("boom"),
-    ):
+    ), mock.patch("hotel_ai.bookings.services.logger") as logger_mock:
         booking = create_booking(
             room=double[1],
             client=client_fixture,
@@ -318,15 +361,13 @@ def test_create_booking_skips_calendar_on_sync_failure(double, client_fixture):
             check_out=_dt.date(2027, 1, 2),
             guests=2,
         )
-        assert booking.status == BookingStatus.CONFIRMED
+    assert booking.status == BookingStatus.CONFIRMED
+    logger_mock.debug.assert_called_once()
 
 
 @pytest.mark.django_db
 def test_cancel_booking_skips_calendar_on_sync_failure(double, client_fixture):
     """Cancel must succeed even when calendar sync raises."""
-    from hotel_ai.calendar_integration.models import GoogleCalendarConnection
-    from hotel_ai.calendar_integration.services import ensure_room_calendar
-
     booking = create_booking(
         room=double[1],
         client=client_fixture,
@@ -334,26 +375,19 @@ def test_cancel_booking_skips_calendar_on_sync_failure(double, client_fixture):
         check_out=_dt.date(2027, 2, 2),
         guests=2,
     )
-    rc = ensure_room_calendar(double[1])
-    conn = GoogleCalendarConnection.objects.create(google_user_email="fail2@test.com")
-    rc.connection = conn
-    rc.calendar_id = "main"
-    rc.save()
 
     with mock.patch(
-        "hotel_ai.calendar_integration.services._get_calendar_service",
+        "hotel_ai.calendar_integration.services.sync_booking",
         side_effect=RuntimeError("boom"),
-    ):
+    ), mock.patch("hotel_ai.bookings.services.logger") as logger_mock:
         cancel_booking(booking)
     assert booking.status == BookingStatus.CANCELLED
+    logger_mock.debug.assert_called_once()
 
 
 @pytest.mark.django_db
 def test_no_show_booking_skips_calendar_on_sync_failure(double, client_fixture):
     """No-show must succeed even when calendar sync raises."""
-    from hotel_ai.calendar_integration.models import GoogleCalendarConnection
-    from hotel_ai.calendar_integration.services import ensure_room_calendar
-
     booking = create_booking(
         room=double[1],
         client=client_fixture,
@@ -361,18 +395,14 @@ def test_no_show_booking_skips_calendar_on_sync_failure(double, client_fixture):
         check_out=_dt.date(2027, 3, 2),
         guests=2,
     )
-    rc = ensure_room_calendar(double[1])
-    conn = GoogleCalendarConnection.objects.create(google_user_email="fail3@test.com")
-    rc.connection = conn
-    rc.calendar_id = "main"
-    rc.save()
 
     with mock.patch(
-        "hotel_ai.calendar_integration.services._get_calendar_service",
+        "hotel_ai.calendar_integration.services.sync_booking",
         side_effect=RuntimeError("boom"),
-    ):
+    ), mock.patch("hotel_ai.bookings.services.logger") as logger_mock:
         no_show_booking(booking)
     assert booking.status == BookingStatus.NO_SHOW
+    logger_mock.debug.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -1059,7 +1089,7 @@ def test_availability_stream_returns_sse_content_type(client):
 
 
 @pytest.mark.django_db
-def test_availability_stream_generates_sse_format(client):
+def test_availability_stream_generates_sse_format(client, monkeypatch):
     """The stream generator yields proper SSE frames."""
     from hotel_ai.bookings.views import AvailabilityStreamView
     import io
@@ -1068,13 +1098,21 @@ def test_availability_stream_generates_sse_format(client):
     with AvailabilityStreamView._lock:
         AvailabilityStreamView._event_queue.append({"type": "test"})
 
+    # The generator sleeps 0.5s between iterations when the queue is empty;
+    # stub it out so the test doesn't block on the idle path.
+    monkeypatch.setattr("hotel_ai.bookings.views.time.sleep", lambda *_a, **_k: None)
+
     resp = client.get("/api/availability/stream/")
 
-    # Consume a bounded number of chunks from the streaming generator
+    # Consume a bounded number of chunks from the streaming generator.
+    # Pulling past the event also exercises the generator's idle sleep
+    # between iterations (the time.sleep(0.5) branch).
     chunks = []
     for chunk in resp.streaming_content:
         chunks.append(chunk)
         if b"test" in chunk:
+            # One more iteration to advance past the yield into the idle sleep.
+            chunks.append(next(resp.streaming_content))
             break
 
     assert len(chunks) > 0
@@ -1474,6 +1512,19 @@ def test_api_availability_get_rejects_bad_dates(client):
 
 
 @pytest.mark.django_db
+def test_api_availability_post_rejects_inverted_dates(client):
+    """POST /api/availability/ hits the AvailabilityRequestSerializer.validate()."""
+    rt, _ = _make_room_pair("Single")
+    resp = client.post(
+        "/api/availability/",
+        {"room_type": rt.name, "check_in": "2026-07-02", "check_out": "2026-07-01", "guests": 1},
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+    assert "check_out must be after check_in" in str(resp.json())
+
+
+@pytest.mark.django_db
 def test_api_availability_post_known_room_type(client):
     """POST /api/availability/ with a known room_type covers the branch."""
     rt, room = _make_room_pair("Single")
@@ -1512,6 +1563,18 @@ def test_api_pricing_post(client):
     data = resp.json()
     assert data["nights"] == 3
     assert data["total_price"] == "900.00"
+
+
+@pytest.mark.django_db
+def test_api_pricing_post_rejects_inverted_dates(client):
+    """POST /api/pricing/ with check_out <= check_in hits the serializer's validate()."""
+    resp = client.post(
+        "/api/pricing/",
+        {"room_type": "Double", "check_in": "2026-07-02", "check_out": "2026-07-01"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+    assert "check_out must be after check_in" in str(resp.json())
 
 
 @pytest.mark.django_db
@@ -1564,6 +1627,27 @@ def test_api_booking_create_unknown_room_number(client):
     )
     assert resp.status_code == 404
     assert "Room 'NONEXISTENT' not found" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_api_booking_create_rejects_inverted_dates(client):
+    """POST /api/bookings/create/ with check_out <= check_in hits the serializer validate()."""
+    rt, _ = _make_room_pair("Single")
+    payload = {
+        "room_type": rt.name,
+        "room_number": "S1",
+        "check_in": "2026-07-02",
+        "check_out": "2026-07-01",
+        "guests": 1,
+        "first_name": "A",
+        "last_name": "B",
+        "email": "a@b.com",
+    }
+    resp = client.post(
+        "/api/bookings/create/", json.dumps(payload), content_type="application/json"
+    )
+    assert resp.status_code == 400
+    assert "check_out must be after check_in" in str(resp.json())
 
 
 @pytest.mark.django_db
@@ -1629,6 +1713,42 @@ def test_booking_admin_check_in_to_filter(client):
 
 
 @pytest.mark.django_db
+def test_booking_admin_actions(client):
+    """The mark_confirmed / mark_cancelled admin actions update status."""
+    from django.contrib import admin as django_admin
+    from django.contrib.admin.sites import AdminSite
+    from django.contrib.auth.models import User
+
+    from hotel_ai.bookings.admin import BookingAdmin
+    from hotel_ai.bookings.models import BookingStatus
+
+    User.objects.create_superuser("admin", "a@b.com", "pass")
+    client.login(username="admin", password="pass")
+
+    rt, room = _make_room_pair("Single")
+    booking = create_booking(
+        room=room,
+        client=Client.objects.create(first_name="A", last_name="X"),
+        check_in=_dt.date(2026, 6, 1),
+        check_out=_dt.date(2026, 6, 2),
+    )
+    booking.status = BookingStatus.PENDING
+    booking.save()
+
+    site = AdminSite()
+    admin_instance = BookingAdmin(Booking, site)
+    queryset = Booking.objects.filter(pk=booking.pk)
+
+    admin_instance.mark_confirmed(None, queryset)
+    booking.refresh_from_db()
+    assert booking.status == BookingStatus.CONFIRMED
+
+    admin_instance.mark_cancelled(None, queryset)
+    booking.refresh_from_db()
+    assert booking.status == BookingStatus.CANCELLED
+
+
+@pytest.mark.django_db
 def test_booking_export_check_in_to_filter(client):
     rt, room = _make_room_pair("Single")
     create_booking(room=room, client=Client.objects.create(first_name="A", last_name="X"), check_in=_dt.date(2026, 6, 1), check_out=_dt.date(2026, 6, 2))
@@ -1653,6 +1773,26 @@ def test_booking_export_check_in_from_filter(client):
 
 
 @pytest.mark.django_db
+def test_booking_log_serializer_serializes_log(client):
+    """BookingLogSerializer renders a BookingLog row as expected."""
+    from hotel_ai.bookings.serializers import BookingLogSerializer
+
+    rt, room = _make_room_pair("Single")
+    booking = create_booking(
+        room=room,
+        client=Client.objects.create(first_name="A", last_name="X"),
+        check_in=_dt.date(2026, 6, 1),
+        check_out=_dt.date(2026, 6, 2),
+    )
+    log = BookingLog.objects.create(booking=booking, action="created", notes="ok")
+    data = BookingLogSerializer(log).data
+    assert data["id"] == log.id
+    assert data["action"] == "created"
+    assert data["notes"] == "ok"
+    assert data["booking"] == booking.id
+
+
+@pytest.mark.django_db
 def test_availability_stream_emit_sets_queue(client, monkeypatch):
     from hotel_ai.bookings.views import AvailabilityStreamView
     monkeypatch.setattr(AvailabilityStreamView, "_running", False)
@@ -1667,9 +1807,11 @@ def test_availability_stream_poll_loop_handles_db_error(client, monkeypatch):
     import threading
     monkeypatch.setattr(AvailabilityStreamView, "_running", True)
     monkeypatch.setattr(AvailabilityStreamView, "_watcher_thread", None)
-    # Make the booking count query always raise
-    original_count = Booking.objects.count
-    Booking.objects.count = lambda *a, **k: (_ for _ in []).throw(RuntimeError("boom"))
+    # Make the booking count query always raise. The poll loop calls
+    # Booking.objects.exclude(...).count(), so the QuerySet's count must fail.
+    fake_qs = mock.MagicMock()
+    fake_qs.count.side_effect = RuntimeError("boom")
+    monkeypatch.setattr(Booking.objects, "exclude", lambda *a, **k: fake_qs)
     try:
         t = threading.Thread(target=AvailabilityStreamView._poll_loop, daemon=True)
         t.start()
@@ -1679,7 +1821,6 @@ def test_availability_stream_poll_loop_handles_db_error(client, monkeypatch):
         t.join(timeout=1)
     finally:
         AvailabilityStreamView._running = False
-        Booking.objects.count = original_count
 
 
 @pytest.mark.django_db
@@ -1717,6 +1858,26 @@ def test_room_bulk_update_not_found_room(client):
     data = resp.json()
     assert len(data["updated"]) == 0
     assert any(e.get("error") == "Room not found" for e in data["errors"])
+
+
+@pytest.mark.django_db
+def test_room_bulk_update_rejects_non_list_payload(client):
+    """A JSON body that parses to a scalar (str/int) is rejected as 400."""
+    resp = client.patch(
+        "/api/rooms/bulk-update/",
+        '"42"',
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Expected a list or object"
+
+
+@pytest.mark.django_db
+def test_today_returns_current_date():
+    """The today() helper returns the current local date."""
+    from hotel_ai.bookings.services import today
+
+    assert today() == _dt.date.today()
 
 
 # ---------------------------------------------------------------------------
