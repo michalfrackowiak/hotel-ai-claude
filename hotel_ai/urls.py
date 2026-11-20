@@ -146,6 +146,12 @@ def dashboard(request):
 
 urlpatterns = [
     path("health/", health, name="health"),
+    # allauth is mounted at the project root (no namespace) because its
+    # own templates call reverse("account_login") without a namespace.
+    # It must come BEFORE the catch-all home view so /login/, /signup/
+    # and /google/login/ resolve to allauth instead of the landing page.
+    path("", include("allauth.urls")),
+    path("", include("allauth.socialaccount.providers.google.urls")),
     path("", home, name="home"),
     path("dashboard/", dashboard, name="dashboard"),
     path("admin/", admin.site.urls),
@@ -154,4 +160,5 @@ urlpatterns = [
     path("api/calendar/", include("hotel_ai.calendar_integration.urls")),
     path("voice/", include("hotel_ai.voice.urls")),
     path("chat/", include("hotel_ai.chat.urls")),
+    path("accounts/", include("hotel_ai.accounts.urls")),
 ]

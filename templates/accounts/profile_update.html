@@ -1,0 +1,25 @@
+{% extends "accounts/base.html" %}
+
+{% block content %}
+  <h1 class="page-title">Account settings</h1>
+
+  <div class="card">
+    <h2>Profile details</h2>
+    <form method="post" class="stacked">
+      {% csrf_token %}
+      <label for="{{ form.phone.id_for_label }}">Phone</label>
+      <input type="text" name="phone" id="{{ form.phone.id_for_label }}"
+             value="{{ form.phone.value|default:profile.phone }}" placeholder="+48 22 000 00 00">
+      {% if form.phone.errors %}<ul class="errorlist">{% for e in form.phone.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+
+      <label for="{{ form.language.id_for_label }}">Preferred language</label>
+      <select name="language" id="{{ form.language.id_for_label }}">
+        <option value="en" {% if form.language.value == 'en' %}selected{% endif %}>English</option>
+        <option value="pl" {% if form.language.value == 'pl' %}selected{% endif %}>Polski</option>
+      </select>
+      {% if form.language.errors %}<ul class="errorlist">{% for e in form.language.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+
+      <button type="submit" class="btn btn-primary">Save changes</button>
+    </form>
+  </div>
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends "accounts/base.html" %}
+
+{% block content %}
+  <h1 class="page-title">My Bookings</h1>
+
+  <div class="card">
+    <h2>Account</h2>
+    <div class="field-row">
+      <span class="label">Username</span>
+      <span class="value">{{ profile.user.get_username }}</span>
+    </div>
+    <div class="field-row">
+      <span class="label">Phone</span>
+      <span class="value">{{ profile.phone|default:"—" }}</span>
+    </div>
+    <div class="field-row">
+      <span class="label">Language</span>
+      <span class="value">{{ profile.language }}</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Your reservations</h2>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Room</th>
+            <th>Check-in</th>
+            <th>Check-out</th>
+            <th>Guests</th>
+            <th>Total</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in bookings %}
+          <tr>
+            <td><strong>{{ b.room.room_number }}</strong> · {{ b.room.room_type.name }}</td>
+            <td>{{ b.check_in|date:"M d, Y" }}</td>
+            <td>{{ b.check_out|date:"M d, Y" }}</td>
+            <td>{{ b.guests }}</td>
+            <td>{{ b.total_price }} {{ b.currency }}</td>
+            <td><span class="badge">{{ b.get_status_display }}</span></td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" class="empty">You have no bookings yet. Book a room through our AI reception or link an existing booking.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Link a booking you already made</h2>
+    <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">
+      Made a booking via chat, voice, or the front desk? Enter its ID to attach it to this account so it shows up here.
+    </p>
+    <form method="post" action="{% url 'accounts:booking-link' booking_id=0 %}" style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+      <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+      <input type="number" name="booking_id" id="linkBookingId" min="1" placeholder="Booking ID (e.g. 42)" style="padding: 0.6rem 0.75rem; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem;">
+      <button type="button" class="btn btn-primary" onclick="linkBooking()">Link booking</button>
+    </form>
+  </div>
+
+  <script>
+    function linkBooking() {
+      const id = document.getElementById('linkBookingId').value;
+      if (!id) return;
+      const form = document.querySelector('form[action*="/link/"]');
+      form.action = "{% url 'accounts:booking-link' booking_id=0 %}".replace("0", id);
+      form.submit();
+    }
+  </script>
+{% endblock %}

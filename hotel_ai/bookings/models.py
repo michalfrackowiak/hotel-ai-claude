@@ -127,6 +127,14 @@ class Booking(models.Model):
     client = models.ForeignKey(
         Client, on_delete=models.CASCADE, related_name="bookings"
     )
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="bookings_owned",
+        help_text="Authenticated guest who created the booking.",
+    )
     pricing_rule = models.ForeignKey(
         PricingRule,
         on_delete=models.SET_NULL,
