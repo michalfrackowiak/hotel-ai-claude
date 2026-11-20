@@ -18,6 +18,21 @@ from rest_framework import generics
 import threading
 import time
 
+from hotel_ai.accounts.permissions import BookingOwnershipPermission, IsOwnerOrReadOnly
+from hotel_ai.bookings.services import (
+    availability_summary,
+    calculate_total,
+    cancel_booking,
+    check_in_booking,
+    check_out_booking,
+    create_booking,
+    effective_price,
+    find_available_rooms,
+    no_show_booking,
+    parse_date,
+    resolve_client,
+)
+
 from .models import Booking, BookingLog, BookingStatus, Client, Room, RoomType
 from .serializers import (
     AvailabilityRequestSerializer,
@@ -53,19 +68,6 @@ class BookingActivityView(APIView):
             "current_status": booking.status,
             "activity_log": list(logs),
         })
-from .services import (
-    availability_summary,
-    calculate_total,
-    cancel_booking,
-    check_in_booking,
-    check_out_booking,
-    create_booking,
-    effective_price,
-    find_available_rooms,
-    no_show_booking,
-    parse_date,
-    resolve_client,
-)
 
 
 class RoomTypeListView(generics.ListAPIView):
@@ -91,6 +93,7 @@ class BookingListView(generics.ListAPIView):
 class BookingRetrieveUpdateView(generics.RetrieveUpdateAPIView):
     serializer_class = BookingSerializer
     queryset = Booking.objects.select_related("room", "client", "pricing_rule")
+    permission_classes = [BookingOwnershipPermission]
 
 
 class BookingLookupView(APIView):
@@ -252,7 +255,7 @@ class BookingCreateView(APIView):
 class BookingCancelView(APIView):
     """Cancel a booking by id."""
 
-    permission_classes = [AllowAny]
+    permission_classes = [BookingOwnershipPermission]
 
     def post(self, request, pk):
         try:
@@ -273,7 +276,7 @@ class BookingCancelView(APIView):
 class BookingCheckInView(APIView):
     """Check in a confirmed booking."""
 
-    permission_classes = [AllowAny]
+    permission_classes = [BookingOwnershipPermission]
 
     def post(self, request, pk):
         try:
@@ -295,7 +298,7 @@ class BookingCheckInView(APIView):
 class BookingCheckoutView(APIView):
     """Check out a checked-in booking."""
 
-    permission_classes = [AllowAny]
+    permission_classes = [BookingOwnershipPermission]
 
     def post(self, request, pk):
         try:
@@ -317,7 +320,7 @@ class BookingCheckoutView(APIView):
 class BookingNoShowView(APIView):
     """Mark a confirmed booking whose guest did not arrive as a no-show."""
 
-    permission_classes = [AllowAny]
+    permission_classes = [BookingOwnershipPermission]
 
     def post(self, request, pk):
         try:
@@ -564,7 +567,7 @@ class AvailabilityStreamView(APIView):
 class RoomBulkUpdateView(APIView):
     """PATCH bulk-update room properties (room_number, floor, is_active)."""
 
-    permission_classes = [AllowAny]
+    permission_classes = [BookingOwnershipPermission]
 
     def patch(self, request):
         rooms_data = request.data
