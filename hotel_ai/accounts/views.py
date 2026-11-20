@@ -61,6 +61,7 @@ class ProfileUpdateView(UpdateView):
         ctx = super().get_context_data(**kwargs)
         ctx["lang"] = self._lang()
         ctx["section"] = "settings"
+        ctx["profile"] = self.get_object()
         return ctx
 
     def form_valid(self, form):
