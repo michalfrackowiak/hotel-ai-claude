@@ -1406,3 +1406,87 @@ def test_ollama_post_uses_correct_url_and_timeout():
             _, kwargs = mock_post.call_args
             assert kwargs["json"]["model"] == "llama3.1:8b"
             assert kwargs["timeout"] == 30
+
+
+# ---------------------------------------------------------------------------
+# Anthropic provider
+# ---------------------------------------------------------------------------
+    from .anthropic_provider import AnthropicProvider
+
+    provider = AnthropicProvider({
+        "provider_type": "anthropic",
+        "model": "claude-3-haiku",
+        "api_key": "sk-ant",
+        "base_url": "http://localhost:4000",
+    })
+    with mock.patch("hotel_ai.ai_providers.anthropic_provider.anthropic.Anthropic") as mock_anth:
+        provider._client()
+        _, kwargs = mock_anth.call_args
+        assert kwargs["base_url"] == "http://localhost:4000"
+        assert kwargs["timeout"] == 30
+
+
+# ---------------------------------------------------------------------------
+# Ollama provider
+# ---------------------------------------------------------------------------
+def _ollama_provider(base_url="http://localhost:11434"):
+    from .ollama_provider import OllamaProvider
+    return OllamaProvider({
+        "provider_type": "ollama",
+        "model": "llama3.1:8b",
+        "api_key": "",
+        "base_url": base_url,
+    })
+
+
+def test_ollama_chat_success():
+    provider = _ollama_provider()
+    with mock.patch.object(provider, "_post") as mock_post:
+        mock_post.return_value = {"message": {"content": "hello ollama"}}
+        assert provider.chat([{"role": "user", "content": "hi"}]) == "hello ollama"
+
+
+def test_ollama_chat_missing_content_raises():
+    from .base import AIProviderError
+
+    provider = _ollama_provider()
+    with mock.patch.object(provider, "_post") as mock_post:
+        mock_post.return_value = {"error": "no content"}
+        with pytest.raises(AIProviderError, match="Unexpected Ollama response"):
+            provider.chat([{"role": "user", "content": "hi"}])
+
+
+def test_ollama_stream_chat_yields_lines():
+    provider = _ollama_provider()
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def iter_lines(self):
+            yield b'{"message":{"content":"chunk1"}}'
+            yield b'{"message":{"content":"chunk2"}}'
+            yield b""
+
+    with mock.patch("hotel_ai.ai_providers.ollama_provider.requests.post") as mock_post:
+        mock_post.return_value = FakeResponse()
+        chunks = list(provider.stream_chat([{"role": "user", "content": "hi"}]))
+    assert chunks == ["chunk1", "chunk2"]
+
+
+def test_ollama_stream_skips_bad_json_lines():
+    provider = _ollama_provider()
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def iter_lines(self):
+            yield b"not json at all"
+            yield b'{"bad": true}'
+            yield b'{"message":{"content":"real"}}'
+
+    with mock.patch("hotel_ai.ai_providers.ollama_provider.requests.post") as mock_post:
+        mock_post.return_value = FakeResponse()
+        chunks = list(provider.stream_chat([{"role": "user", "content": "hi"}]))
+    assert chunks == ["real"]
