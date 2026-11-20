@@ -403,6 +403,326 @@ def test_agent_lookup_booking_by_name():
 
 
 # ---------------------------------------------------------------------------
+# Agent error / edge-case paths
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+def test_agent_no_provider_returns_error():
+    agent = ReservationAgent(language="en", provider=mock.MagicMock())
+    agent.provider = None  # force the no-provider path
+    conv = Conversation.objects.create(session_key="s-no-provider", channel="chat")
+    result = agent.handle_message(conv, "hello")
+    assert result.error == "no_provider"
+    assert result.text == "No AI provider configured."
+
+
+@pytest.mark.django_db
+def test_agent_unknown_action_logged(hotel):
+    provider = FakeProvider(
+        {"provider_type": "fake", "model": "f"},
+        replies=[json.dumps({"action": "teleport", "args": {}})],
+    )
+    agent = ReservationAgent(language="en", provider=provider)
+    conv = Conversation.objects.create(session_key="s-unknown-action", channel="chat")
+    result = agent.handle_message(conv, "go somewhere")
+    assert result.action == "teleport"
+    # Tool result fed back to LLM mentions unknown action.
+    assert provider.calls[1][-1]["content"].startswith("[tool result]")
+
+
+@pytest.mark.django_db
+def test_agent_tool_loop_exhausted(hotel):
+    """After max_tool_rounds tool actions without a reply, the agent signals
+    exhaustion rather than looping forever."""
+    provider = FakeProvider(
+        {"provider_type": "fake", "model": "f"},
+        replies=[
+            json.dumps({"action": "book", "args": {"room_type": "Double"}}),
+            json.dumps({"action": "book", "args": {"room_type": "Double"}}),
+            json.dumps({"action": "book", "args": {"room_type": "Double"}}),
+            json.dumps({"action": "book", "args": {"room_type": "Double"}}),
+            json.dumps({"action": "book", "args": {"room_type": "Double"}}),
+        ],
+    )
+    agent = ReservationAgent(language="en", provider=provider)
+    conv = Conversation.objects.create(session_key="s-exhausted", channel="chat")
+    result = agent.handle_message(conv, "book me in", max_tool_rounds=4)
+    assert result.error == "tool_loop_exhausted"
+
+
+@pytest.mark.django_db
+def test_agent_run_check_availability_invalid_dates(hotel):
+    agent = ReservationAgent(language="en")
+    result = agent._run_check_availability({"check_in": "not-a-date"})
+    assert "Invalid dates" in result
+
+
+@pytest.mark.django_db
+def test_agent_run_book_missing_room_type(hotel):
+    agent = ReservationAgent(language="en")
+    result = agent._run_book({"check_in": "2026-07-01"})
+    assert result == "Missing 'room_type'."
+
+
+@pytest.mark.django_db
+def test_agent_run_book_invalid_dates(hotel):
+    agent = ReservationAgent(language="en")
+    result = agent._run_book({"room_type": "Double", "check_in": "bad"})
+    assert "Invalid dates" in result
+
+
+@pytest.mark.django_db
+def test_agent_run_book_no_rooms_available(hotel):
+    with mock.patch(
+        "hotel_ai.ai_providers.agent.find_available_rooms", return_value=[]
+    ):
+        agent = ReservationAgent(language="en")
+        result = agent._run_book(
+            {
+                "room_type": "Double",
+                "check_in": "2026-07-01",
+                "check_out": "2026-07-02",
+                "guests": 1,
+            }
+        )
+    assert "No rooms" in result
+
+
+@pytest.mark.django_db
+def test_agent_run_book_create_fails(hotel):
+    with mock.patch(
+        "hotel_ai.ai_providers.agent.create_booking",
+        side_effect=ValueError("too short"),
+    ):
+        agent = ReservationAgent(language="en")
+        result = agent._run_book(
+            {
+                "room_type": "Double",
+                "check_in": "2026-07-01",
+                "check_out": "2026-07-02",
+                "guests": 1,
+                "first_name": "Test",
+            }
+        )
+    assert result.startswith("Booking failed:")
+
+
+@pytest.mark.django_db
+def test_agent_run_check_in_lookup_not_found(hotel):
+    agent = ReservationAgent(language="en")
+    result = agent._run_check_in({"booking_id": 99999})
+    assert "not found" in result.lower()
+
+
+@pytest.mark.django_db
+def test_agent_run_check_in_lookup_invalid_id():
+    agent = ReservationAgent(language="en")
+    result = agent._run_check_in({"booking_id": "abc"})
+    assert result == "Invalid 'booking_id'."
+
+
+@pytest.mark.django_db
+def test_agent_run_check_out_lookup_not_found(hotel):
+    agent = ReservationAgent(language="en")
+    result = agent._run_check_out({"booking_id": 99999})
+    assert "not found" in result.lower()
+
+
+@pytest.mark.django_db
+def test_agent_run_cancel_already_cancelled(hotel):
+    rt, room = hotel["Single"], hotel["room"]
+    booking = create_booking(
+        room=room,
+        client=Client.objects.create(first_name="CancelMe", email="cm@test.com"),
+        check_in=_dt.date.today(),
+        check_out=_dt.date.today() + _dt.timedelta(days=1),
+        guests=1,
+    )
+    cancel_booking(booking)
+    assert booking.status == BookingStatus.CANCELLED
+
+    provider = FakeProvider(
+        {"provider_type": "fake", "model": "fake"},
+        replies=[json.dumps({"action": "cancel", "args": {"booking_id": booking.id}})],
+    )
+    agent = ReservationAgent(language="en", provider=provider)
+    conv = Conversation.objects.create(session_key="s-cancel-already", channel="chat")
+    agent.handle_message(conv, "cancel again")
+    booking.refresh_from_db()
+    assert booking.status == BookingStatus.CANCELLED
+    # Second cancel should not raise; tool result says "Already cancelled."
+    assert "Already cancelled" in provider.calls[1][-1]["content"]
+
+
+@pytest.mark.django_db
+def test_agent_run_no_show_lookup_not_found(hotel):
+    agent = ReservationAgent(language="en")
+    result = agent._run_no_show({"booking_id": 99999})
+    assert "not found" in result.lower()
+
+
+@pytest.mark.django_db
+def test_agent_run_no_show_already_marked(hotel):
+    rt, room = hotel["Single"], hotel["room"]
+    booking = create_booking(
+        room=room,
+        client=Client.objects.create(first_name="NoShowMe", email="ns@test.com"),
+        check_in=_dt.date.today(),
+        check_out=_dt.date.today() + _dt.timedelta(days=1),
+        guests=1,
+    )
+    from hotel_ai.bookings.services import no_show_booking
+
+    no_show_booking(booking)
+    assert booking.status == BookingStatus.NO_SHOW
+
+    provider = FakeProvider(
+        {"provider_type": "fake", "model": "fake"},
+        replies=[json.dumps({"action": "no_show", "args": {"booking_id": booking.id}})],
+    )
+    agent = ReservationAgent(language="en", provider=provider)
+    conv = Conversation.objects.create(session_key="s-noshow-already", channel="chat")
+    agent.handle_message(conv, "mark no-show again")
+    booking.refresh_from_db()
+    assert booking.status == BookingStatus.NO_SHOW
+    assert "Already marked as no-show" in provider.calls[1][-1]["content"]
+
+
+@pytest.mark.django_db
+def test_agent_lookup_booking_nonexistent_name():
+    """Name lookup with no matching guest returns informative message."""
+    agent = ReservationAgent(language="en")
+    result = agent._lookup_booking({"guest_name": "NobodyHere123"})
+    assert "No booking found" in result
+
+
+@pytest.mark.django_db
+def test_agent_lookup_booking_missing_both_ids():
+    agent = ReservationAgent(language="en")
+    result = agent._lookup_booking({})
+    assert result == "Missing 'booking_id' or 'guest_name'."
+
+
+def test_parse_action_non_dict_json():
+    """A JSON array or scalar should be rejected as non-dict."""
+    assert ReservationAgent._parse_action('["a", "b"]') is None
+    assert ReservationAgent._parse_action('"just a string"') is None
+
+
+def test_parse_action_plain_text_falls_back():
+    """Plain text without braces still returns None (unparseable)."""
+    assert ReservationAgent._parse_action("Hello world") is None
+
+
+@pytest.mark.django_db
+def test_agent_run_check_in_value_error(hotel):
+    """Call check_in on an already-checked-in booking; check_in_booking raises ValueError."""
+    rt, room = hotel["Single"], hotel["room"]
+    booking = create_booking(
+        room=room,
+        client=Client.objects.create(first_name="Penda", email="p@test.com"),
+        check_in=_dt.date.today(),
+        check_out=_dt.date.today() + _dt.timedelta(days=1),
+        guests=1,
+        source="agent",
+    )
+    from hotel_ai.bookings.services import check_in_booking as ci
+    ci(booking)
+    # Now booking is CHECKED_IN — calling again raises ValueError.
+    agent = ReservationAgent(language="en")
+    result = agent._run_check_in({"booking_id": booking.id})
+    assert result.startswith("Check-in failed:")
+
+
+@pytest.mark.django_db
+def test_agent_run_check_out_value_error(hotel):
+    """Call check_out on a CONFIRMED booking; check_out_booking raises ValueError."""
+    rt, room = hotel["Single"], hotel["room"]
+    booking = create_booking(
+        room=room,
+        client=Client.objects.create(first_name="COut", email="co@test.com"),
+        check_in=_dt.date.today(),
+        check_out=_dt.date.today() + _dt.timedelta(days=1),
+        guests=1,
+    )
+    agent = ReservationAgent(language="en")
+    result = agent._run_check_out({"booking_id": booking.id})
+    assert result.startswith("Check-out failed:")
+
+
+@pytest.mark.django_db
+def test_agent_run_cancel_already_cancelled_line_335(hotel):
+    """Directly call _run_cancel on a cancelled booking to cover the
+    isinstance(booking, str) guard after lookup at line 335."""
+    rt, room = hotel["Single"], hotel["room"]
+    booking = create_booking(
+        room=room,
+        client=Client.objects.create(first_name="CancelLine", email="cl@test.com"),
+        check_in=_dt.date.today(),
+        check_out=_dt.date.today() + _dt.timedelta(days=1),
+        guests=1,
+    )
+    cancel_booking(booking)
+    agent = ReservationAgent(language="en")
+    result = agent._run_cancel({"booking_id": booking.id})
+    assert "Already cancelled" in result
+
+
+@pytest.mark.django_db
+def test_agent_run_cancel_lookup_returns_string(hotel):
+    """When _lookup_booking returns a string (missing booking), line 335
+    (isinstance guard) is exercised before the status check."""
+    agent = ReservationAgent(language="en")
+    result = agent._run_cancel({"booking_id": 99999})
+    assert "not found" in result.lower()
+
+
+@pytest.mark.django_db
+def test_agent_run_no_show_value_error(hotel):
+    """Call no_show on an already-cancelled booking; the service raises
+    ValueError because only CONFIRMED bookings can become NO_SHOW."""
+    rt, room = hotel["Single"], hotel["room"]
+    booking = create_booking(
+        room=room,
+        client=Client.objects.create(first_name="Nshow", email="ns@test.com"),
+        check_in=_dt.date.today(),
+        check_out=_dt.date.today() + _dt.timedelta(days=1),
+        guests=1,
+    )
+    cancel_booking(booking)
+    # Now booking is CANCELLED; no_show_booking rejects it.
+    agent = ReservationAgent(language="en")
+    result = agent._run_no_show({"booking_id": booking.id})
+    assert result.startswith("No-show failed:")
+
+
+@pytest.mark.django_db
+def test_agent_lookup_two_part_name_matches(hotel):
+    """Two-word guest name uses the else branch of _lookup_booking."""
+    rt, room = hotel["Single"], hotel["room"]
+    from hotel_ai.bookings.services import create_booking
+
+    create_booking(
+        room=room,
+        client=Client.objects.create(first_name="Jan", last_name="Kowalski", email="jk@test.com"),
+        check_in=_dt.date.today(),
+        check_out=_dt.date.today() + _dt.timedelta(days=1),
+        guests=1,
+    )
+    agent = ReservationAgent(language="en")
+    found = agent._lookup_booking({"guest_name": "Jan Kowalski"})
+    assert not isinstance(found, str)
+    assert found.client.last_name == "Kowalski"
+
+
+def test_parse_action_braces_in_non_json_text():
+    """When raw text contains JSON inside other prose, the regex fallback
+    should capture it (line 434)."""
+    raw = 'Here is your booking {"action":"reply","text":"ok"} thanks!'
+    data = ReservationAgent._parse_action(raw)
+    assert data == {"action": "reply", "text": "ok"}
+
+
+# ---------------------------------------------------------------------------
 # OpenAI provider (mocked client)
 # ---------------------------------------------------------------------------
 def _fake_chat_response(content):
