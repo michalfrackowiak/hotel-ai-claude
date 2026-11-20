@@ -278,3 +278,63 @@ def test_voice_turn_endpoint_passes_mime_to_turn():
             format="json",
         )
     fake.turn.assert_called_once_with("AA==", mime="audio/ogg")
+
+
+# ---------------------------------------------------------------------------
+# Voice call page (browser-side mic capture) — HTTPS verification
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_call_page_contains_getUserMedia():
+    """The voice call page must request the microphone via getUserMedia."""
+    client = APIClient()
+    resp = client.get("/voice/")
+    assert resp.status_code == 200
+    assert b"navigator.mediaDevices.getUserMedia" in resp.content
+    assert b"MediaRecorder" in resp.content
+
+
+@pytest.mark.django_db
+def test_call_page_contains_getUserMedia_polish():
+    client = APIClient()
+    resp = client.get("/voice/?lang=pl")
+    assert resp.status_code == 200
+    assert b"navigator.mediaDevices.getUserMedia" in resp.content
+    assert b"MediaRecorder" in resp.content
+
+
+@pytest.mark.django_db
+def test_voice_turn_endpoint_full_flow_with_mocked_provider():
+    """End-to-end: a recorded voice turn returns transcript + spoken audio."""
+    client = APIClient()
+    fake = mock.MagicMock()
+    fake.turn.return_value = {
+        "transcript": "book me a room",
+        "text": "Sure thing",
+        "audio_b64": "AAECAw==",
+        "audio_mime": "audio/mpeg",
+        "action": "reply",
+        "booking_id": None,
+        "error": None,
+    }
+    with mock.patch("hotel_ai.voice.views.VoiceConversation", return_value=fake):
+        resp = client.post(
+            "/voice/turn/",
+            {
+                "session_key": "sess-voice",
+                "audio_b64": "AA==",
+                "mime": "audio/webm",
+                "language": "en",
+            },
+            format="json",
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["transcript"] == "book me a room"
+    assert body["text"] == "Sure thing"
+    assert body["audio_b64"] == "AAECAw=="
+    assert body["audio_mime"] == "audio/mpeg"
+    assert body["action"] == "reply"
+    assert body["error"] is None
+    fake.turn.assert_called_once_with("AA==", mime="audio/webm")
