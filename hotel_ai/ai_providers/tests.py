@@ -1112,3 +1112,50 @@ def test_coerce_chat_response_dict_content_fails():
     """Dict with 'content' key that can't be read as text falls through."""
     result = {"content": [1]}
     assert coerce_chat_response(result) == "{'content': [1]}"
+
+
+# ---------------------------------------------------------------------------
+# Admin helper
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+def test_has_api_key_true_for_stored_key(db):
+    """When a provider has an explicit api_key, has_api_key returns True."""
+    from django.contrib.admin.sites import AdminSite
+    from .admin import AIProviderAdmin
+
+    p = AIProvider.objects.create(
+        name="k1", provider_type="openai", model="gpt-4o", api_key="sk-stored"
+    )
+    site = AdminSite()
+    admin = AIProviderAdmin(AIProvider, site)
+    assert admin.has_api_key(p) is True
+
+
+@pytest.mark.django_db
+def test_has_api_key_true_from_env(db, settings):
+    """When no stored key exists but the env var does, has_api_key returns True."""
+    from django.contrib.admin.sites import AdminSite
+    from .admin import AIProviderAdmin
+
+    settings.OPENAI_API_KEY = "sk-from-env"
+    p = AIProvider.objects.create(
+        name="k2", provider_type="openai", model="gpt-4o", api_key=""
+    )
+    site = AdminSite()
+    admin = AIProviderAdmin(AIProvider, site)
+    assert admin.has_api_key(p) is True
+
+
+@pytest.mark.django_db
+def test_has_api_key_false_when_neither_set(db, settings):
+    """With no stored key and no env key, has_api_key returns False."""
+    from django.contrib.admin.sites import AdminSite
+    from .admin import AIProviderAdmin
+
+    settings.OPENAI_API_KEY = ""
+    p = AIProvider.objects.create(
+        name="k3", provider_type="openai", model="gpt-4o", api_key=""
+    )
+    site = AdminSite()
+    admin = AIProviderAdmin(AIProvider, site)
+    assert admin.has_api_key(p) is False
