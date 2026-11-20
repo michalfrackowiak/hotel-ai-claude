@@ -121,3 +121,32 @@ def test_seed_data_writes_progress_to_stdout():
     written = "".join(call.args[0] for call in out.write.call_args_list)
     assert "Seeding room types" in written
     assert "Seed data complete" in written
+
+
+@pytest.mark.django_db
+def test_seed_rooms_skips_room_type_not_in_mapping():
+    """A room type referenced by the mapping but absent from room_types is skipped."""
+    from hotel_ai.bookings.management.commands.seed_data import Command
+
+    cmd = Command()
+    # Pass a mapping whose "Double" entry has no corresponding room type.
+    cmd._seed_rooms(
+        {
+            "Single": RoomType.objects.create(name="Single", base_price_per_night=Decimal("200.00"), capacity=1),
+            "Suite": RoomType.objects.create(name="Suite", base_price_per_night=Decimal("550.00"), capacity=3),
+        }
+    )
+    # Only Single and Suite rooms should exist; no Double rooms.
+    assert not Room.objects.filter(room_number__startswith="2").exists()
+
+
+@pytest.mark.django_db
+def test_seed_demo_booking_skips_when_bookings_exist():
+    """If bookings already exist, _seed_demo_booking returns early."""
+    from hotel_ai.bookings.management.commands.seed_data import Command
+
+    call_command("seed_data")
+    existing = Booking.objects.first()
+    cmd = Command()
+    cmd._seed_demo_booking({"Double": RoomType.objects.get(name="Double")})
+    assert Booking.objects.filter(id=existing.id).exists()
