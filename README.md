@@ -12,6 +12,7 @@ Alpha version of an AI-powered hotel reception system with voice and chat reserv
 - **Management Dashboard**: Visual room grid with real-time status tiles (available / confirmed / checked-in / no-show)
 - **AI Agents**: Tool-loop agent pattern for structured JSON responses
 - **Calendar Sync**: Best-effort Google Calendar integration (optional)
+- **Guest Accounts**: Username/password login, Google SSO, and a guest portal to view and link bookings
 - **Docker Deployment**: Single-container setup with gunicorn
 
 ## Tech Stack
@@ -75,6 +76,13 @@ Alpha version of an AI-powered hotel reception system with voice and chat reserv
 | `/api/availability/stream/` | SSE | Real-time availability events |
 | `/api/admin/` | GET | Admin booking list |
 | `/api/feed/` | GET | iCal calendar export |
+| `/login/` | GET/POST | Guest login (django-allauth) |
+| `/signup/` | GET/POST | Guest registration |
+| `/logout/` | GET/POST | Guest logout |
+| `/google/login/` | GET | Google SSO entry point |
+| `/accounts/profile/` | GET | Guest portal: bookings + account |
+| `/accounts/profile/update/` | POST | Update phone and language |
+| `/accounts/bookings/<id>/link/` | POST | Claim an existing booking |
 | `/admin/` | GET | Django admin panel |
 
 ## Docker Deployment

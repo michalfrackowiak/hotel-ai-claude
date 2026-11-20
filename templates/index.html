@@ -73,6 +73,8 @@
     <nav class="nav-links">
       <a href="/voice/?lang={{ language }}">{% if language == "pl" %}Głos{% else %}Voice{% endif %}</a>
       <a href="/chat/?lang={{ language }}">{% if language == "pl" %}Czat{% else %}Chat{% endif %}</a>
+      <a href="/login/">{% if language == "pl" %}Zaloguj się{% else %}Sign in{% endif %}</a>
+      <a href="/signup/">{% if language == "pl" %}Zarejestruj się{% else %}Sign up{% endif %}</a>
       <select class="lang-switch" id="langSwitch">
         <option value="en" {% if language == "en" %}selected{% endif %}>English</option>
         <option value="pl" {% if language == "pl" %}selected{% endif %}>Polski</option>
