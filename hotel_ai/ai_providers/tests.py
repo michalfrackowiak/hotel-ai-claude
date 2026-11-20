@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import sys
 from decimal import Decimal
 from unittest import mock
 
@@ -871,3 +872,243 @@ def test_openai_client_omits_base_url_when_empty():
         provider._client()
         _, kwargs = mock_openai.call_args
         assert "base_url" not in kwargs
+
+# ---------------------------------------------------------------------------
+# Base layer edge cases
+# ---------------------------------------------------------------------------
+def test_coerce_chat_response_string():
+    assert coerce_chat_response("just a string") == "just a string"
+
+
+def test_coerce_chat_response_dict_openai():
+    result = {"choices": [{"message": {"content": "hi"}}]}
+    assert coerce_chat_response(result) == "hi"
+
+
+def test_coerce_chat_response_dict_anthropic():
+    result = {"content": [{"text": "hello"}]}
+    assert coerce_chat_response(result) == "hello"
+
+
+def test_coerce_chat_response_fallback():
+    """When nothing matches, coerce returns str()."""
+    assert coerce_chat_response(42) == "42"
+
+
+def test_base_stream_chat_falls_back_to_chat():
+    """Default stream_chat yields a single chunk from chat()."""
+
+    class Dummy(BaseAIProvider):
+        provider_type = "dummy"
+
+        def chat(self, messages, **kwargs):
+            return "fallback text"
+
+    provider = Dummy({"model": "d", "api_key": ""})
+    chunks = list(provider.stream_chat([{"role": "user", "content": "x"}]))
+    assert chunks == ["fallback text"]
+
+
+def test_base_transcribe_raises_by_default():
+    from .base import AIProviderError
+
+    class Dummy(BaseAIProvider):
+        provider_type = "dummy"
+
+        def chat(self, messages, **kwargs):
+            return ""
+
+    provider = Dummy({"model": "d", "api_key": ""})
+    with pytest.raises(AIProviderError, match="does not support speech-to-text"):
+        provider.transcribe(b"\x00")
+
+
+def test_base_speak_raises_by_default():
+    from .base import AIProviderError
+
+    class Dummy(BaseAIProvider):
+        provider_type = "dummy"
+
+        def chat(self, messages, **kwargs):
+            return ""
+
+    provider = Dummy({"model": "d", "api_key": ""})
+    with pytest.raises(AIProviderError, match="does not support text-to-speech"):
+        provider.speak("hello")
+
+
+# ---------------------------------------------------------------------------
+# Factory / runtime lookup
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+def test_get_active_provider_with_agent(db, settings):
+    from .factory import get_active_provider
+
+    p = AIProvider.objects.create(
+        name="o1", provider_type="openai", model="gpt-4o-mini", api_key="sk-x"
+    )
+    AgentSettings.objects.create(provider=p, language="en", is_active=True)
+    result = get_active_provider("en")
+    assert result is not None
+    assert result.model == "gpt-4o-mini"
+
+
+@pytest.mark.django_db
+def test_get_active_provider_no_agent_uses_default_provider(db, settings):
+    from .factory import get_active_provider
+
+    AIProvider.objects.create(
+        name="o2", provider_type="openai", model="gpt-4o", is_default=True, is_active=True
+    )
+    result = get_active_provider()
+    assert result is not None
+    assert result.model == "gpt-4o"
+
+
+@pytest.mark.django_db
+def test_get_active_provider_env_fallback(db, settings):
+    from .factory import get_active_provider
+
+    settings.DEFAULT_PROVIDER = "openai"
+    settings.DEFAULT_MODEL = "gpt-4o-mini"
+    settings.OPENAI_API_KEY = "sk-env"
+    result = get_active_provider()
+    assert result is not None
+    assert result.api_key == "sk-env"
+
+
+@pytest.mark.django_db
+def test_get_speech_provider_with_stt(db, settings):
+    from .factory import get_speech_provider
+
+    p = AIProvider.objects.create(
+        name="whisper", provider_type="openai", model="whisper-1", api_key="sk-w"
+    )
+    AgentSettings.objects.create(
+        provider=None, stt_provider=p, language="en", is_active=True
+    )
+    result = get_speech_provider("stt", "en")
+    assert result is not None
+    assert result.model == "whisper-1"
+
+
+@pytest.mark.django_db
+def test_get_speech_provider_no_agent_returns_none(db, settings):
+    from .factory import get_speech_provider
+
+    result = get_speech_provider("stt")
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Model helpers
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+def test_effective_base_url_explicit(db):
+    p = AIProvider.objects.create(
+        name="custom", provider_type="openai", model="gpt-4o", base_url="https://my.proxy"
+    )
+    assert p.effective_base_url() == "https://my.proxy"
+
+
+@pytest.mark.django_db
+def test_effective_base_url_openai_empty(db):
+    p = AIProvider.objects.create(
+        name="open-e", provider_type="openai", model="gpt-4o"
+    )
+    assert p.effective_base_url() == ""
+
+
+@pytest.mark.django_db
+def test_to_config_roundtrips(db):
+    p = AIProvider.objects.create(
+        name="cfg-test",
+        provider_type="openai",
+        model="gpt-4o",
+        api_key="sk-r",
+        base_url="https://b",
+        timeout_seconds=60,
+        extra_config={"nested": True},
+    )
+    config = p.to_config()
+    assert config["provider_type"] == "openai"
+    assert config["model"] == "gpt-4o"
+    assert config["api_key"] == "sk-r"
+    assert config["base_url"] == "https://b"
+    assert config["timeout_seconds"] == 60
+    assert config["extra_config"] == {"nested": True}
+
+
+# ---------------------------------------------------------------------------
+# OpenAI provider edge cases
+# ---------------------------------------------------------------------------
+def test_openai_stream_chat_failure_raises():
+    from .base import AIProviderError
+    import openai
+
+    provider = _openai_provider()
+    with mock.patch.object(provider, "_client") as mock_client:
+        mock_client.return_value.chat.completions.create.side_effect = openai.OpenAIError("stream boom")
+        with pytest.raises(AIProviderError, match="stream failed"):
+            list(provider.stream_chat([{"role": "user", "content": "hi"}]))
+
+
+def test_openai_speak_with_custom_format():
+    provider = _openai_provider()
+    with mock.patch.object(provider, "_client") as mock_client:
+        mock_client.return_value.audio.speech.create.return_value = _fake_speech_response(b"fmt")
+        result = provider.speak("hello", format="wav")
+    assert result == b"fmt"
+
+
+def test_openai_transcribe_with_language():
+    provider = _openai_provider()
+    with mock.patch.object(provider, "_client") as mock_client:
+        mock_client.return_value.audio.transcriptions.create.return_value = _fake_audio_response("pl")
+        result = provider.transcribe(b"audio", language="pl")
+    assert result == "pl"
+
+
+# ---------------------------------------------------------------------------
+# Remaining base/factory edge cases
+# ---------------------------------------------------------------------------
+def test_coerce_chat_response_dict_anthropic():
+    """Dict-shaped Anthropic response falls through the last dict branch."""
+    result = {"content": [{"text": "hello from dict"}]}
+    assert coerce_chat_response(result) == "hello from dict"
+
+
+def test_get_provider_class_caches_anthropic(monkeypatch):
+    """Lazy-import of AnthropicProvider caches into _PROVIDER_CLASSES."""
+    # Provide a fake module so the real package isn't needed.
+    fake_cls = type("AnthropicProvider", (), {"provider_type": "anthropic"})()
+    fake_mod = mock.MagicMock()
+    fake_mod.AnthropicProvider = fake_cls
+    monkeypatch.setitem(
+        sys.modules, "hotel_ai.ai_providers.anthropic_provider", fake_mod
+    )
+    from .factory import _get_provider_class
+
+    cls = _get_provider_class("anthropic")
+    assert cls is fake_cls
+    # Second call returns cached class (no re-import).
+    assert _get_provider_class("anthropic") is fake_cls
+
+
+def test_get_provider_class_caches_ollama(monkeypatch):
+    """Lazy-import of OllamaProvider caches into _PROVIDER_CLASSES."""
+    fake_cls = type("OllamaProvider", (), {"provider_type": "ollama"})()
+    fake_mod = mock.MagicMock()
+    fake_mod.OllamaProvider = fake_cls
+    monkeypatch.setitem(sys.modules, "hotel_ai.ai_providers.ollama_provider", fake_mod)
+    from .factory import _get_provider_class
+
+    cls = _get_provider_class("ollama")
+    assert cls is fake_cls
+    assert _get_provider_class("ollama") is fake_cls
+
+
+def test_coerce_chat_response_dict_content_fails():
+    """Dict with 'content' key that can't be read as text falls through."""
+    result = {"content": [1]}
+    assert coerce_chat_response(result) == "{'content': [1]}"
