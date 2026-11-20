@@ -63,7 +63,7 @@ Alpha version of an AI-powered hotel reception system with voice and chat reserv
 | `/chat/?lang=en|pl` | GET | Chat UI |
 | `/chat/turn/` | POST | Chat message turn |
 | `/voice/?lang=en|pl` | GET | Voice call UI |
-| `/api/voice/turn/` | POST | Voice audio processing |
+| `/voice/turn/` | POST | Voice audio processing |
 | `/api/room-types/` | GET | List room types |
 | `/api/rooms/` | GET | List rooms |
 | `/api/bookings/create/` | POST | Create booking |

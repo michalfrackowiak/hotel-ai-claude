@@ -106,7 +106,7 @@
     const micIcon = document.getElementById('micIcon');
     const speakingContainer = document.getElementById('speakingContainer');
     const bouncingBalls = document.getElementById('bouncingBalls');
-    const API = '/api/voice/turn/';
+    const API = '{% url "voice:voice-turn" %}';
     const LANG = '{{ language }}';
     const T = {
       ready: LANG === 'pl' ? '✅ Gotowy — naciśnij Start, aby rozmawiać' : '✅ Ready — press Start to talk',

@@ -305,6 +305,21 @@ def test_call_page_contains_getUserMedia_polish():
 
 
 @pytest.mark.django_db
+def test_call_page_uses_resolvable_turn_url():
+    """The call page must POST to a URL that actually exists (no 404 on the turn endpoint)."""
+    from django.urls import reverse
+
+    client = APIClient()
+    resp = client.get("/voice/")
+    assert resp.status_code == 200
+    expected = reverse("voice:voice-turn")
+    assert expected.encode() in resp.content
+    # The resolved URL must itself be reachable.
+    turn_resp = client.post(expected, {}, format="json")
+    assert turn_resp.status_code == 200
+
+
+@pytest.mark.django_db
 def test_voice_turn_endpoint_full_flow_with_mocked_provider():
     """End-to-end: a recorded voice turn returns transcript + spoken audio."""
     client = APIClient()
