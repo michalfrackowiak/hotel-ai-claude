@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import datetime as _dt
+import json
+from decimal import Decimal
 from unittest import mock
 
 import pytest
 from rest_framework.test import APIClient
 
 from hotel_ai.ai_providers.base import AIProviderError
-from hotel_ai.ai_providers.models import Conversation
+from hotel_ai.ai_providers.models import Conversation, Message
 
 
 @pytest.fixture
@@ -197,3 +200,137 @@ def test_chat_turn_updates_existing_session_language(api_client):
     assert resp.status_code == 200
     conv.refresh_from_db()
     assert conv.language == "pl"
+
+
+@pytest.mark.django_db
+def test_chat_booking_flow_creates_booking(api_client):
+    """A chat turn that books a room persists the booking end-to-end."""
+    from hotel_ai.bookings.models import Booking, Client, Room, RoomType
+    from hotel_ai.bookings.services import create_booking
+
+    room_type = RoomType.objects.create(name="Double", base_price_per_night=Decimal("300.00"), capacity=2)
+    room = Room.objects.create(room_number="201", room_type=room_type, floor=2)
+    booking = create_booking(
+        room=room,
+        client=Client.objects.create(first_name="Anna", last_name="Kowalska"),
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+        guests=2,
+        source="agent",
+    )
+
+    def _fake_handle_message(conv, msg):
+            Message.objects.create(conversation=conv, role="user", content=msg)
+            Message.objects.create(conversation=conv, role="assistant", content="Booked! Room 201, 2 nights, 600 PLN.")
+            return _fake_result(text="Booked! Room 201, 2 nights, 600 PLN.", action="book", booking_id=booking.id)
+
+    with mock.patch("hotel_ai.chat.views.ReservationAgent") as MockAgent:
+        MockAgent.return_value.handle_message.side_effect = _fake_handle_message
+        resp = api_client.post(
+            "/chat/turn/",
+            {
+                "session_key": "booking-flow",
+                "language": "en",
+                "message": "Please book a double for Anna Kowalska, July 1-3",
+            },
+            format="json",
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["action"] == "book"
+    assert data["booking_id"] == booking.id
+    assert "Booked" in data["reply"]
+    assert Booking.objects.filter(pk=booking.id).exists()
+    # The conversation row the agent worked on is the one the view created.
+    conv = Conversation.objects.get(session_key="booking-flow")
+    assert conv.channel == "chat"
+    assert conv.messages.filter(role="user").count() == 1
+    assert conv.messages.filter(role="assistant").count() == 1
+
+
+@pytest.mark.django_db
+def test_chat_booking_flow_propagates_booking_id_from_agent(api_client):
+    """The booking_id returned by the agent is echoed in the API response."""
+    with mock.patch("hotel_ai.chat.views.ReservationAgent") as MockAgent:
+        MockAgent.return_value.handle_message.return_value = _fake_result(
+            text="Checked in Anna Kowalska to room 201.",
+            action="check_in",
+            booking_id=11,
+        )
+        resp = api_client.post(
+            "/chat/turn/",
+            {
+                "session_key": "checkin-flow",
+                "language": "en",
+                "message": "Check in Anna Kowalska",
+            },
+            format="json",
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["action"] == "check_in"
+    assert data["booking_id"] == 11
+    assert "201" in data["reply"]
+
+
+@pytest.mark.django_db
+def test_chat_booking_flow_real_agent_creates_booking_db_row(api_client):
+    """End-to-end: chat_turn -> ReservationAgent -> tool execution -> DB Booking row."""
+    from hotel_ai.ai_providers.base import BaseAIProvider
+    from hotel_ai.bookings.models import Booking, Room, RoomType
+
+    class FakeProvider(BaseAIProvider):
+        provider_type = "fake"
+        def __init__(self, replies):
+            super().__init__({})
+            self.replies = list(replies)
+        def chat(self, messages, **kwargs):
+            return self.replies.pop(0)
+
+    room_type = RoomType.objects.create(name="Double", base_price_per_night=Decimal("300.00"), capacity=2)
+    Room.objects.create(room_number="201", room_type=room_type, floor=2)
+
+    fake = FakeProvider(replies=[
+        json.dumps({
+            "action": "book",
+            "args": {
+                "room_type": "Double",
+                "check_in": "2026-07-01",
+                "check_out": "2026-07-03",
+                "guests": 2,
+                "first_name": "Jan",
+                "last_name": "Kowalski",
+                "email": "jan@example.com",
+            },
+        }),
+        json.dumps({"action": "reply", "text": "Rezerwacja została potwierdzona. Pokój 201."}),
+    ])
+
+    with mock.patch("hotel_ai.chat.views.ReservationAgent") as MockAgent:
+        from hotel_ai.ai_providers.agent import ReservationAgent
+        real_agent = ReservationAgent(language="pl", provider=fake)
+        MockAgent.return_value = real_agent
+
+        resp = api_client.post(
+            "/chat/turn/",
+            {
+                "session_key": "real-agent-booking",
+                "language": "pl",
+                "message": "Zarezerwuj pokój dwuosobowy dla Jan Kowalski od 1 do 3 lipca",
+            },
+            format="json",
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["action"] == "book"
+    assert data["booking_id"] is not None
+    assert "201" in data["reply"]
+
+    # Verify real DB booking created by tool execution loop
+    b = Booking.objects.get(pk=data["booking_id"])
+    assert b.client.first_name == "Jan"
+    assert b.client.last_name == "Kowalski"
+    assert b.check_in == _dt.date(2026, 7, 1)
+    assert b.check_out == _dt.date(2026, 7, 3)
+    assert b.source == "agent"

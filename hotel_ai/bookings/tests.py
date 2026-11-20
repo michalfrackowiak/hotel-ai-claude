@@ -10,6 +10,7 @@ from decimal import Decimal
 from unittest import mock
 
 import pytest
+from django.utils import timezone
 
 from hotel_ai.bookings.models import Booking, BookingLog, BookingStatus, Client, PricingRule, Room, RoomType
 from hotel_ai.bookings.services import (
@@ -1877,7 +1878,7 @@ def test_today_returns_current_date():
     """The today() helper returns the current local date."""
     from hotel_ai.bookings.services import today
 
-    assert today() == _dt.date.today()
+    assert today() == timezone.now().date()
 
 
 # ---------------------------------------------------------------------------

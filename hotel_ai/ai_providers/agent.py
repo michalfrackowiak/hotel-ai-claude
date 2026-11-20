@@ -201,6 +201,14 @@ class ReservationAgent:
                 outcome = f"Unknown action '{action}'."
 
             result.action = action
+            # Surface the booking id back to the caller so the view can
+            # echo it (and the guest can reference it later).
+            try:
+                tool_outcome = json.loads(outcome) if isinstance(outcome, str) else outcome
+                if isinstance(tool_outcome, dict) and tool_outcome.get("booking_id") is not None:
+                    result.booking_id = int(tool_outcome["booking_id"])
+            except (TypeError, ValueError, KeyError):
+                pass
             messages.append({"role": "assistant", "content": raw})
             messages.append(
                 {
