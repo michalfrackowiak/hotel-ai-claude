@@ -110,9 +110,12 @@ class PasswordChangeView(View):
     @staticmethod
     def _patch_lang_and_section(request) -> None:
         """Attach lang/section so the custom template renders correctly."""
-        lang = request.GET.get("lang") or getattr(
-            getattr(request.user, "profile", None), "language", "en"
-        ) or "en"
+        lang = (
+            request.GET.get("lang")
+            or request.POST.get("lang")
+            or getattr(getattr(request.user, "profile", None), "language", "en")
+            or "en"
+        )
         request.session["_portal_lang"] = lang
         request.session["_portal_section"] = "password"
         request.lang = lang
