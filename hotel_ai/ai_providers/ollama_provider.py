@@ -21,6 +21,11 @@ class OllamaProvider(BaseAIProvider):
 
     def _url(self, path: str) -> str:
         base = self.base_url.rstrip("/")
+        # "localhost" resolves to ::1 first on most stacks, but the local
+        # Ollama daemon only binds 127.0.0.1.  requests then hangs on the
+        # IPv6 socket until the read timeout.  Pin the loopback to IPv4.
+        if base.replace("https://", "").replace("http://", "").startswith("localhost"):
+            base = base.replace("://localhost", "://127.0.0.1", 1)
         return f"{base}{path}"
 
     def _post(self, path: str, payload: dict) -> dict:

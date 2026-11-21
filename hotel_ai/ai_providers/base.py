@@ -35,7 +35,7 @@ class BaseAIProvider(ABC):
         self.model = config.get("model", "")
         self.api_key = config.get("api_key", "") or ""
         self.base_url = config.get("base_url", "") or ""
-        self.timeout = config.get("timeout_seconds", 30)
+        self.timeout = config.get("timeout_seconds", 120)
         self.extra = config.get("extra_config", {}) or {}
 
     # ------------------------------------------------------------------

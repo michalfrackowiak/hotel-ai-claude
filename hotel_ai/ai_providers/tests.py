@@ -289,6 +289,7 @@ def test_agent_checks_in(hotel):
     conv = Conversation.objects.create(session_key="s-checkin", channel="chat")
     result = agent.handle_message(conv, f"Check in booking {booking.id}")
     assert result.action == "check_in" or result.text
+    assert result.booking_id == booking.id
     booking.refresh_from_db()
     assert booking.status == BookingStatus.CHECKED_IN
 
@@ -859,7 +860,7 @@ def test_openai_client_uses_base_url_when_set():
         _, kwargs = mock_openai.call_args
         assert kwargs["base_url"] == "http://ollama:11434/v1"
         assert kwargs["api_key"] == "sk-test"
-        assert kwargs["timeout"] == 30
+        assert kwargs["timeout"] == 120
 
 
 def test_openai_client_omits_base_url_when_empty():
@@ -1269,7 +1270,7 @@ def test_anthropic_client_uses_base_url_when_set():
         provider._client()
         _, kwargs = mock_anth.call_args
         assert kwargs["base_url"] == "http://localhost:4000"
-        assert kwargs["timeout"] == 30
+        assert kwargs["timeout"] == 120
 
 
 # ---------------------------------------------------------------------------
@@ -1405,5 +1406,17 @@ def test_ollama_post_uses_correct_url_and_timeout():
             provider.chat([{"role": "user", "content": "hi"}])
             _, kwargs = mock_post.call_args
             assert kwargs["json"]["model"] == "llama3.1:8b"
-            assert kwargs["timeout"] == 30
+            assert kwargs["timeout"] == 120
+
+
+def test_ollama_url_pins_localhost_to_ipv4():
+    """``localhost`` resolves to ::1 first, but the Ollama daemon binds 127.0.0.1.
+
+    Without this the request hangs on the IPv6 socket until the read timeout.
+    """
+    provider = _ollama_provider(base_url="http://localhost:11434")
+    assert provider._url("/api/chat") == "http://127.0.0.1:11434/api/chat"
+    # Non-localhost hosts are passed through untouched.
+    other = _ollama_provider(base_url="http://my-server:8080")
+    assert other._url("/api/chat") == "http://my-server:8080/api/chat"
 

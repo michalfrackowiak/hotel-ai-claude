@@ -84,7 +84,7 @@ def get_active_provider(language: Optional[str] = None) -> Optional[BaseAIProvid
         "model": model,
         "api_key": getattr(dj_settings, f"{provider_type.upper()}_API_KEY", "") or "",
         "base_url": getattr(dj_settings, "OLLAMA_BASE_URL", "") if provider_type == "ollama" else "",
-        "timeout_seconds": 30,
+        "timeout_seconds": 120,
         "extra_config": {},
     }
     return build_provider(config)
