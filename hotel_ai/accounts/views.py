@@ -93,11 +93,12 @@ class PasswordChangeView(View):
 
     def post(self, request, *args, **kwargs):
         from allauth.account.forms import ChangePasswordForm
-        from django.contrib.auth import update_session_auth_hash
+        from django.contrib.auth import login, update_session_auth_hash
         form = ChangePasswordForm(user=request.user, data=request.POST)
         if form.is_valid():
-            user = form.save()
-            update_session_auth_hash(request, user)
+            form.save()
+            update_session_auth_hash(request, request.user)
+            login(request, request.user, backend="django.contrib.auth.backends.ModelBackend")
             lang = getattr(request, "lang", "en")
             from django.urls import reverse
             return redirect(f"{reverse('accounts:profile')}?lang={lang}")
