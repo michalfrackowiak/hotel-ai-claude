@@ -295,14 +295,16 @@ class TestProfileLanguage:
         resp = client.post(
             reverse("accounts:password-change"),
             {
-                "old_password": "oldpwd",
-                "new_password1": "newpwd123",
-                "new_password2": "newpwd123",
+                "oldpassword": "oldpwd",
+                "password1": "newpwd123",
+                "password2": "newpwd123",
             },
-            follow=True,
         )
-        assert resp.status_code == 200
-        assert "?lang=pl" in resp.request["PATH_INFO"] or "?lang=pl" in resp.redirect_chain[0][0]
+        # Our view must append ?lang=pl to the success redirect.
+        # allauth logs out on password change, so follow=True would hit
+        # /login/ and can't reach profile — check the Location header directly.
+        assert resp.status_code == 302
+        assert resp["Location"].endswith("?lang=pl")
 
 
 @pytest.mark.django_db

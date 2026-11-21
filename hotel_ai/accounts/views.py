@@ -83,8 +83,8 @@ class PasswordChangeView(View):
         return super().dispatch(request, *args, **kwargs)
 
     def get(self, request, *args, **kwargs):
-        from django.contrib.auth.forms import PasswordChangeForm
-        form = PasswordChangeForm(user=request.user)
+        from allauth.account.forms import ChangePasswordForm
+        form = ChangePasswordForm(user=request.user)
         return render(request, self.template_name, {
             "form": form,
             "lang": getattr(request, "lang", "en"),
@@ -92,9 +92,9 @@ class PasswordChangeView(View):
         })
 
     def post(self, request, *args, **kwargs):
-        from django.contrib.auth.forms import PasswordChangeForm
+        from allauth.account.forms import ChangePasswordForm
         from django.contrib.auth import update_session_auth_hash
-        form = PasswordChangeForm(user=request.user, data=request.POST)
+        form = ChangePasswordForm(user=request.user, data=request.POST)
         if form.is_valid():
             user = form.save()
             update_session_auth_hash(request, user)
