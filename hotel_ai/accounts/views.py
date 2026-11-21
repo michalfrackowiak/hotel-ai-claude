@@ -74,37 +74,49 @@ class ProfileUpdateView(UpdateView):
 
 @method_decorator(login_required, name="dispatch")
 class PasswordChangeView(View):
-    """Standard password-change form backed by Django's auth views."""
+    """Standard password-change form with language/section tracking."""
 
     template_name = "accounts/password_change.html"
-    success_url = reverse_lazy("accounts:profile")
 
-    def _dispatch(self, request, *args, **kwargs):
-        from django.contrib.auth.views import PasswordChangeView as DjangoPwChange
-
-        view = DjangoPwChange.as_view(
-            template_name=self.template_name,
-            success_url=self.success_url,
-        )
-        return view(request, *args, **kwargs)
+    def dispatch(self, request, *args, **kwargs):
+        self._patch_lang_and_section(request)
+        return super().dispatch(request, *args, **kwargs)
 
     def get(self, request, *args, **kwargs):
-        self._inject_lang_and_section(request)
-        return self._dispatch(request, *args, **kwargs)
+        from django.contrib.auth.forms import PasswordChangeForm
+        form = PasswordChangeForm(user=request.user)
+        return render(request, self.template_name, {
+            "form": form,
+            "lang": getattr(request, "lang", "en"),
+            "section": getattr(request, "section", "password"),
+        })
 
     def post(self, request, *args, **kwargs):
-        self._inject_lang_and_section(request)
-        return self._dispatch(request, *args, **kwargs)
+        from django.contrib.auth.forms import PasswordChangeForm
+        from django.contrib.auth import update_session_auth_hash
+        form = PasswordChangeForm(user=request.user, data=request.POST)
+        if form.is_valid():
+            user = form.save()
+            update_session_auth_hash(request, user)
+            lang = getattr(request, "lang", "en")
+            from django.urls import reverse
+            return redirect(f"{reverse('accounts:profile')}?lang={lang}")
+        return render(request, self.template_name, {
+            "form": form,
+            "lang": getattr(request, "lang", "en"),
+            "section": getattr(request, "section", "password"),
+        })
 
     @staticmethod
-    def _inject_lang_and_section(request) -> None:
-        """Attach lang/section to request so the base nav highlights correctly."""
-        lang = request.GET.get("lang") or request.user.profile.language or "en"
+    def _patch_lang_and_section(request) -> None:
+        """Attach lang/section so the custom template renders correctly."""
+        lang = request.GET.get("lang") or getattr(
+            getattr(request.user, "profile", None), "language", "en"
+        ) or "en"
         request.session["_portal_lang"] = lang
         request.session["_portal_section"] = "password"
-        if lang != "en":
-            # Rebuild success_url with the language query param so allauth redirects honor it.
-            request.success_url = f"/accounts/profile/?lang={lang}"
+        request.lang = lang
+        request.section = "password"
 
 
 @method_decorator(login_required, name="dispatch")

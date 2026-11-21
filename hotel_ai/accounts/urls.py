@@ -12,6 +12,7 @@ from django.urls import path
 
 from .views import (
     BookingLinkView,
+    PasswordChangeView,
     ProfileUpdateView,
     ProfileView,
 )
@@ -21,6 +22,11 @@ app_name = "accounts"
 urlpatterns = [
     path("profile/", ProfileView.as_view(), name="profile"),
     path("profile/update/", ProfileUpdateView.as_view(), name="profile-update"),
+    path(
+        "password/change/",
+        PasswordChangeView.as_view(),
+        name="password-change",
+    ),
     path(
         "bookings/<int:booking_id>/link/",
         BookingLinkView.as_view(),

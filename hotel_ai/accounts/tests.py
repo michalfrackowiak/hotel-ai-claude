@@ -248,6 +248,91 @@ class TestBookingLink:
 
 
 @pytest.mark.django_db
+class TestProfileLanguage:
+    """Language param overrides profile preference on portal pages."""
+
+    def test_profile_polish_via_query_param(self, client, django_user_model):
+        user = django_user_model.objects.create_user(username="pltest", password="pass")
+        user.profile.language = "en"
+        user.profile.save()
+        client.force_login(user)
+        resp = client.get(reverse("accounts:profile"), {"lang": "pl"})
+        assert resp.status_code == 200
+        assert b"Moje rezerwacje" in resp.content
+        assert b"My Bookings" not in resp.content
+
+    def test_profile_english_overrides_pl_profile(self, client, django_user_model):
+        user = django_user_model.objects.create_user(username="entest", password="pass")
+        user.profile.language = "pl"
+        user.profile.save()
+        client.force_login(user)
+        resp = client.get(reverse("accounts:profile"), {"lang": "en"})
+        assert resp.status_code == 200
+        assert b"My Bookings" in resp.content
+        assert b"Moje rezerwacje" not in resp.content
+
+    def test_profile_falls_back_to_profile_language(self, client, django_user_model):
+        user = django_user_model.objects.create_user(username="fallback", password="pass")
+        user.profile.language = "pl"
+        user.profile.save()
+        client.force_login(user)
+        resp = client.get(reverse("accounts:profile"))
+        assert resp.status_code == 200
+        assert b"Moje rezerwacje" in resp.content
+
+    def test_password_change_page_preserves_lang(self, client, django_user_model):
+        user = django_user_model.objects.create_user(username="pwtest", password="pass")
+        client.force_login(user)
+        resp = client.get(reverse("accounts:password-change"), {"lang": "pl"})
+        assert resp.status_code == 200
+        assert "Zmień hasło" in resp.content.decode()
+
+    def test_password_change_success_preserves_lang(self, client, django_user_model):
+        user = django_user_model.objects.create_user(username="pwchange", password="oldpwd")
+        user.profile.language = "pl"
+        user.profile.save()
+        client.force_login(user)
+        resp = client.post(
+            reverse("accounts:password-change"),
+            {
+                "old_password": "oldpwd",
+                "new_password1": "newpwd123",
+                "new_password2": "newpwd123",
+            },
+            follow=True,
+        )
+        assert resp.status_code == 200
+        assert "?lang=pl" in resp.request["PATH_INFO"] or "?lang=pl" in resp.redirect_chain[0][0]
+
+
+@pytest.mark.django_db
+class TestBookingLinkLanguage:
+    """Booking-link flow preserves language across redirects."""
+
+    def test_link_booking_preserves_lang_in_redirect(self, client, django_user_model):
+        user = django_user_model.objects.create_user(username="linkpl", password="pass")
+        user.profile.language = "pl"
+        user.profile.save()
+        client.force_login(user)
+
+        room_type = RoomType.objects.create(name="Double", base_price_per_night=320)
+        room = Room.objects.create(room_number="202", room_type=room_type)
+        client_obj = Client.objects.create(first_name="Pre", last_name="Booked", email="pre@example.com", phone="+48 111")
+        booking = Booking.objects.create(
+            room=room, client=client_obj, owner=None,
+            check_in="2026-05-01", check_out="2026-05-05", status="confirmed",
+        )
+        resp = client.post(
+            reverse("accounts:booking-link", kwargs={"booking_id": booking.id}),
+            {"lang": "pl"},
+            follow=True,
+        )
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "Booking linked" in body or "Powiąż" in body
+
+
+@pytest.mark.django_db
 class TestGoogleOAuthRedirect:
     """Google SSO entry point redirects to Google."""
 
