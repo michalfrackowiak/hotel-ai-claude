@@ -14,6 +14,14 @@
       --text-secondary: #5f6368;
       --border: #dadce0;
     }
+
+    [data-theme="dark"] {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --text: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --border: #334155;
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
     .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; }
@@ -79,6 +87,7 @@
         <option value="en" {% if language == "en" %}selected{% endif %}>English</option>
         <option value="pl" {% if language == "pl" %}selected{% endif %}>Polski</option>
       </select>
+      <button class="lang-switch" id="themeSwitch" title="{% if language == "pl" %}Ciemny motyw{% else %}Dark theme{% endif %}">🌙</button>
     </nav>
   </header>
 
@@ -180,6 +189,35 @@
     document.getElementById('langSwitch').addEventListener('change', function() {
       window.location.href = '/?lang=' + this.value;
     });
+
+    // --- Dark theme toggle ---
+    (function() {
+      const themeSwitch = document.getElementById('themeSwitch');
+      const html = document.documentElement;
+
+      function applyTheme(theme) {
+        if (theme === 'dark') {
+          html.setAttribute('data-theme', 'dark');
+          themeSwitch.textContent = '☀️';
+        } else {
+          html.removeAttribute('data-theme');
+          themeSwitch.textContent = '🌙';
+        }
+        localStorage.setItem('hotel-theme', theme);
+      }
+
+      const saved = localStorage.getItem('hotel-theme');
+      if (saved) {
+        applyTheme(saved);
+      } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        applyTheme('dark');
+      }
+
+      themeSwitch.addEventListener('click', function() {
+        const isDark = html.getAttribute('data-theme') === 'dark';
+        applyTheme(isDark ? 'light' : 'dark');
+      });
+    })();
   </script>
 </body>
 </html>

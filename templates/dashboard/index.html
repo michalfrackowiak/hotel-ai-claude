@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{% if language == 'pl' %}Panel Hotelu{% else %}Hotel Dashboard{% endif %} · Hotel Aurora</title>
 <style>
-:root { --primary:#1a73e8; --green:#34a853; --red:#ea4335; --orange:#fa9c33; --purple:#9b59b6; --gray:#5f6368; --bg:#f5f7fa; }
+:root { --primary:#1a73e8; --green:#34a853; --red:#ea4335; --orange:#fa9c33; --purple:#9b59b6; --gray:#5f6368; --bg:#f5f7fa; --surface:#ffffff; --text:#202124; --text-secondary:#5f6368; }
+
+[data-theme="dark"] { --bg:#0f172a; --surface:#1e293b; --text:#f1f5f9; --text-secondary:#94a3b8; --gray:#94a3b8; }
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family: system-ui, sans-serif; background:var(--bg); color:#202124; }
 .nav { background:var(--primary); color:white; padding:1rem 2rem; display:flex; align-items:center; gap:1.5rem; flex-wrap:wrap; }
@@ -45,6 +47,7 @@ tr:hover td { background:#f8f9fa; }
   <a href="/">{% if language == 'pl' %}Chat{% else %}Chat{% endif %}</a>
   <a href="/voice/">{% if language == 'pl' %}Głos{% else %}Voice{% endif %}</a>
   <a href="/api/admin/">{% if language == 'pl' %}Rezerwacje{% else %}Bookings{% endif %}</a>
+  <button id="themeSwitch" style="border:none;background:rgba(255,255,255,0.2);color:white;border-radius:6px;padding:0.25rem 0.75rem;cursor:pointer;font-size:1rem;margin-left:auto;">🌙</button>
 </div>
 <div class="date-bar">
   <label>{% if language == 'pl' %}Data:{% else %}Date:{% endif %}</label>
@@ -183,6 +186,36 @@ function getCookie(name) {
 <script>
 const picker = document.getElementById('datePicker');
 picker.addEventListener('change', () => window.location.href = '?date=' + picker.value);
+</script>
+
+<script>
+(function() {
+  const themeSwitch = document.getElementById('themeSwitch');
+  const html = document.documentElement;
+
+  function applyTheme(theme) {
+    if (theme === 'dark') {
+      html.setAttribute('data-theme', 'dark');
+      themeSwitch.textContent = '☀️';
+    } else {
+      html.removeAttribute('data-theme');
+      themeSwitch.textContent = '🌙';
+    }
+    localStorage.setItem('hotel-theme', theme);
+  }
+
+  const saved = localStorage.getItem('hotel-theme');
+  if (saved) {
+    applyTheme(saved);
+  } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    applyTheme('dark');
+  }
+
+  themeSwitch.addEventListener('click', function() {
+    const isDark = html.getAttribute('data-theme') === 'dark';
+    applyTheme(isDark ? 'light' : 'dark');
+  });
+})();
 </script>
 </body>
 </html>

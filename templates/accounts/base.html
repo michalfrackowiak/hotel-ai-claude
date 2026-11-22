@@ -17,6 +17,14 @@
       --text-secondary: #5f6368;
       --border: #dadce0;
     }
+
+    [data-theme="dark"] {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --text: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --border: #334155;
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
     .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; flex-wrap: wrap; gap: 1rem; }
@@ -75,6 +83,7 @@
       <a href="{% url 'accounts:profile-update' %}{% if lang %}?lang={{ lang }}{% endif %}" class="{% if section == 'settings' %}active{% endif %}">{% if lang == "pl" %}Ustawienia{% else %}Settings{% endif %}</a>
       <a href="{% url 'accounts:password-change' %}{% if lang %}?lang={{ lang }}{% endif %}" class="{% if section == 'password' %}active{% endif %}">{% if lang == "pl" %}Hasło{% else %}Password{% endif %}</a>
       <a href="{% url 'account_logout' %}" class="logout-btn">{% if lang == "pl" %}Wyloguj się{% else %}Sign out{% endif %}</a>
+      <button id="themeSwitch" style="border:none;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:0.5rem;cursor:pointer;font-size:1rem;" title="{% if lang == 'pl' %}Ciemny motyw{% else %}Dark theme{% endif %}">🌙</button>
     </nav>
   </header>
 
@@ -88,5 +97,36 @@
     {% endif %}
     {% block content %}{% endblock %}
   </main>
+
+  <script>
+    // --- Dark theme toggle ---
+    (function() {
+      const themeSwitch = document.getElementById('themeSwitch');
+      const html = document.documentElement;
+
+      function applyTheme(theme) {
+        if (theme === 'dark') {
+          html.setAttribute('data-theme', 'dark');
+          themeSwitch.textContent = '☀️';
+        } else {
+          html.removeAttribute('data-theme');
+          themeSwitch.textContent = '🌙';
+        }
+        localStorage.setItem('hotel-theme', theme);
+      }
+
+      const saved = localStorage.getItem('hotel-theme');
+      if (saved) {
+        applyTheme(saved);
+      } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        applyTheme('dark');
+      }
+
+      themeSwitch.addEventListener('click', function() {
+        const isDark = html.getAttribute('data-theme') === 'dark';
+        applyTheme(isDark ? 'light' : 'dark');
+      });
+    })();
+  </script>
 </body>
 </html>

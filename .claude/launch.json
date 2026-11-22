@@ -2,8 +2,11 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "django-docker",
-      "url": "http://localhost:8888"
+      "name": "django-dev",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["manage.py", "runserver", "8000", "--noreload"],
+      "port": 8000,
+      "url": "http://localhost:8000"
     }
   ]
 }
