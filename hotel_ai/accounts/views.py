@@ -7,9 +7,10 @@ existing bookings to the logged-in account.
 from __future__ import annotations
 
 from django.contrib import messages
+from django.contrib.auth import login, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.generic import UpdateView
@@ -93,14 +94,12 @@ class PasswordChangeView(View):
 
     def post(self, request, *args, **kwargs):
         from allauth.account.forms import ChangePasswordForm
-        from django.contrib.auth import login, update_session_auth_hash
         form = ChangePasswordForm(user=request.user, data=request.POST)
         if form.is_valid():
             form.save()
             update_session_auth_hash(request, request.user)
             login(request, request.user, backend="django.contrib.auth.backends.ModelBackend")
             lang = getattr(request, "lang", "en")
-            from django.urls import reverse
             return redirect(f"{reverse('accounts:profile')}?lang={lang}")
         return render(request, self.template_name, {
             "form": form,

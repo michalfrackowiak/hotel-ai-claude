@@ -180,6 +180,26 @@ class TestPasswordChange:
         user.refresh_from_db()
         assert user.check_password("newpass123")
 
+    def test_password_change_retains_session(self, client, django_user_model):
+        """User stays logged in after password change via our custom view."""
+        user = django_user_model.objects.create_user(username="retain", password="oldpwd")
+        client.force_login(user)
+
+        resp = client.post(
+            reverse("accounts:password-change"),
+            {
+                "oldpassword": "oldpwd",
+                "password1": "newpwd123",
+                "password2": "newpwd123",
+            },
+        )
+        assert resp.status_code == 302
+
+        # User should still be authenticated — profile accessible without redirect to login.
+        resp = client.get(reverse("accounts:profile"))
+        assert resp.status_code == 200
+        assert resp.wsgi_request.user == user
+
 
 @pytest.mark.django_db
 class TestBookingLink:
