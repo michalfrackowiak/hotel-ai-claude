@@ -176,12 +176,28 @@ SOCIALACCOUNT_PROVIDERS = {
 # OpenLine voice integration (django_openline)
 # ---------------------------------------------------------------------------
 OPENLINE = {
+    # --- connection ---
     "BASE_URL": os.environ.get("OPENLINE_BASE_URL", "http://localhost:3000"),
     "API_KEY": os.environ.get("OPENLINE_API_KEY", ""),
     "TIMEOUT": int(os.environ.get("OPENLINE_TIMEOUT", "15")),
     "VERIFY_TLS": os.environ.get("OPENLINE_VERIFY_TLS", "1") == "1",
-    "WEBHOOK_SECRET": os.environ.get("OPENLINE_WEBHOOK_SECRET", ""),
+    # Per-endpoint method/path overrides: {"hangup": ("POST", "/v1/calls/{call_id}/hangup")}
+    "ENDPOINTS": {},
+    # --- call defaults ---
+    "DEFAULT_DEVICE_ID": os.environ.get("OPENLINE_DEFAULT_DEVICE_ID", ""),
     "DEFAULT_STREAM_URL": os.environ.get("OPENLINE_DEFAULT_STREAM_URL", "wss://localhost:8000/voice/stream/"),
+    "DEFAULT_STREAM_FORMAT": os.environ.get("OPENLINE_DEFAULT_STREAM_FORMAT", "twilio"),
+    # --- webhooks ---
+    "WEBHOOK_SECRET": os.environ.get("OPENLINE_WEBHOOK_SECRET", ""),
+    "WEBHOOK_SIGNATURE_HEADERS": (
+        "X-OpenLine-Signature",
+        "X-Signature",
+        "X-Webhook-Signature",
+        "X-Hub-Signature-256",
+    ),
+    "WEBHOOK_VERIFIER": None,
+    "ALLOW_UNSIGNED_WEBHOOKS": os.environ.get("OPENLINE_ALLOW_UNSIGNED_WEBHOOKS", "0") == "1",
+    "DEDUPLICATE_EVENTS": os.environ.get("OPENLINE_DEDUPLICATE_EVENTS", "1") == "1",
 }
 
 # ---------------------------------------------------------------------------

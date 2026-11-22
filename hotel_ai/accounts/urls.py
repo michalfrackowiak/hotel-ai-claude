@@ -12,6 +12,7 @@ from django.urls import path
 
 from .views import (
     BookingLinkView,
+    DebugLogsView,
     PasswordChangeView,
     ProfileUpdateView,
     ProfileView,
@@ -32,4 +33,5 @@ urlpatterns = [
         BookingLinkView.as_view(),
         name="booking-link",
     ),
+    path("debug-logs/", DebugLogsView.as_view(), name="debug-logs"),
 ]

@@ -6,9 +6,11 @@ existing bookings to the logged-in account.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from django.contrib import messages
 from django.contrib.auth import login, update_session_auth_hash
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, user_passes_test
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.utils.decorators import method_decorator
@@ -120,6 +122,41 @@ class PasswordChangeView(View):
         request.session["_portal_section"] = "password"
         request.lang = lang
         request.section = "password"
+
+
+@method_decorator(user_passes_test(lambda u: u.is_staff), name="dispatch")
+class DebugLogsView(View):
+    """Staff-only debug view of recent application logs.
+
+    Reads the project log file (``logs/hotel-ai.log`` by default) and shows
+    the most recent lines so staff can inspect errors without shell access.
+    """
+
+    template_name = "accounts/debug_logs.html"
+    LOG_PATH = Path(__file__).resolve().parent.parent.parent / "logs" / "hotel-ai.log"
+    TAIL_LINES = 200
+
+    def get(self, request, *args, **kwargs):
+        lines = self._tail_log()
+        return render(
+            request,
+            self.template_name,
+            {
+                "log_lines": lines,
+                "log_path": str(self.LOG_PATH),
+                "section": "debug-logs",
+                "lang": request.GET.get("lang", "en"),
+            },
+        )
+
+    def _tail_log(self):
+        try:
+            with self.LOG_PATH.open("r", encoding="utf-8", errors="replace") as fh:
+                return fh.readlines()[-self.TAIL_LINES:]
+        except FileNotFoundError:
+            return ["Log file not found: " + str(self.LOG_PATH)]
+        except OSError as exc:
+            return [f"Could not read log file: {exc}"]
 
 
 @method_decorator(login_required, name="dispatch")

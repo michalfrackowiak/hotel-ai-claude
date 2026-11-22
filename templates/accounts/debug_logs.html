@@ -1,0 +1,30 @@
+{% extends "accounts/base.html" %}
+{% load i18n %}
+
+{% block content %}
+  <h1 class="page-title">{% if lang == "pl" %}Dziennik debug{% else %}Debug logs{% endif %}</h1>
+
+  <div class="card">
+    <h2>{% if lang == "pl" %}Ostatnie wpisy{% else %}Recent entries{% endif %}</h2>
+    <p class="field-row">
+      <span class="label">{% if lang == "pl" %}Plik{% else %}Log file{% endif %}:</span>
+      <span class="value">{{ log_path }}</span>
+    </p>
+    {% if log_lines %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>{% if lang == "pl" %}Wpis{% else %}Entry{% endif %}</th></tr>
+          </thead>
+          <tbody>
+            {% for line in log_lines %}
+              <tr><td style="font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; white-space: pre-wrap;">{{ line }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="empty">{% if lang == "pl" %}Brak wpisów w dzienniku.{% else %}No log entries.{% endif %}</p>
+    {% endif %}
+  </div>
+{% endblock %}
