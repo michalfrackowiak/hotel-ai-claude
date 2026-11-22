@@ -86,6 +86,7 @@ Alpha version of an AI-powered hotel reception system with voice and chat reserv
 | `/admin/` | GET | Django admin panel |
 | `/accounts/password/change/?lang=en|pl` | GET/POST | Guest password change (keeps session, redirects to profile) |
 | `/integrations/openline/` | — | OpenLine voice webhook integration |
+| `/accounts/debug-logs/` | GET | Staff-only debug view of recent application logs |
 
 ## Docker Deployment
 
