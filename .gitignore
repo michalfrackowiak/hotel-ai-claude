@@ -7,3 +7,6 @@ db.sqlite3
 static/
 *.log
 ssl/*.pem
+django-openline/build/
+django-openline/django_openline.egg-info/
+*.egg-info/

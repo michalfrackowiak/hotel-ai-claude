@@ -84,12 +84,14 @@ Alpha version of an AI-powered hotel reception system with voice and chat reserv
 | `/accounts/profile/update/` | POST | Update phone and language |
 | `/accounts/bookings/<id>/link/` | POST | Claim an existing booking |
 | `/admin/` | GET | Django admin panel |
+| `/accounts/password/change/?lang=en|pl` | GET/POST | Guest password change (keeps session, redirects to profile) |
+| `/integrations/openline/` | — | OpenLine voice webhook integration |
 
 ## Docker Deployment
 
 ```bash
 docker build -t hotel-ai-alpha .
-docker run -p 8000:8000 --add-host=host.docker.internal:host-gateway hotel-ai-alpha
+docker run -p 8888:8000 --add-host=host.docker.internal:host-gateway hotel-ai-alpha
 ```
 
 After container startup, seed providers:
