@@ -11,6 +11,7 @@
       --bg: #0f1929;
       --surface: #1a2332;
       --surface-hover: #243342;
+      --surface-texture: url("data:image/svg+xml,%3Csvg viewBox='0 0 120 120' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CFeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
       --text: #e2e8f0;
       --text-secondary: #94a3b8;
       --text-muted: #64748b;
@@ -27,7 +28,7 @@
       --gray: #94a3b8;
     }
 * { margin:0; padding:0; box-sizing:border-box; }
-body { font-family: system-ui, sans-serif; background:var(--bg); color:#202124; }
+body { font-family: system-ui, sans-serif; background:var(--bg) var(--surface-texture); color:#202124; }
 .nav { background:var(--primary); color:white; padding:1rem 2rem; display:flex; align-items:center; gap:1.5rem; flex-wrap:wrap; }
 .nav h1 { font-size:1.25rem; }
 .nav a { color:white; text-decoration:none; border:1px solid rgba(255,255,255,.5); border-radius:6px; padding:.25rem .75rem; font-size:.875rem; }
@@ -225,9 +226,7 @@ picker.addEventListener('change', () => window.location.href = '?date=' + picker
   const saved = localStorage.getItem('hotel-theme');
   if (saved) {
     applyTheme(saved);
-  } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-    applyTheme('dark');
-  }
+  } // Default to light theme — no auto-detection of OS dark mode
 
   themeSwitch.addEventListener('click', function() {
     const isDark = html.getAttribute('data-theme') === 'dark';

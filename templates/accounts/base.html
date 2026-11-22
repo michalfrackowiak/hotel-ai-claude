@@ -22,6 +22,7 @@
       --bg: #0f1929;
       --surface: #1a2332;
       --surface-hover: #243342;
+      --surface-texture: url("data:image/svg+xml,%3Csvg viewBox='0 0 120 120' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CFeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
       --text: #e2e8f0;
       --text-secondary: #94a3b8;
       --text-muted: #64748b;
@@ -37,7 +38,7 @@
       --info: #0ea5e9;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg) var(--surface-texture); color: var(--text); line-height: 1.6; }
     .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; flex-wrap: wrap; gap: 1rem; }
     .logo { display: flex; align-items: center; gap: 0.75rem; text-decoration: none; color: var(--text); }
     .logo-icon { width: 40px; height: 40px; background: linear-gradient(135deg, var(--primary), #4285f4); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 1.2rem; }
@@ -129,9 +130,7 @@
       const saved = localStorage.getItem('hotel-theme');
       if (saved) {
         applyTheme(saved);
-      } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-        applyTheme('dark');
-      }
+      } // Default to light theme — no auto-detection of OS dark mode
 
       themeSwitch.addEventListener('click', function() {
         const isDark = html.getAttribute('data-theme') === 'dark';
