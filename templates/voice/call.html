@@ -38,6 +38,9 @@
       --error: #ef4444;
       --info: #0ea5e9;
     }
+    .theme-emoji { font-size: 1.2rem; transition: color 0.2s; }
+    [data-theme="dark"] .theme-emoji { color: var(--text); }
+    [data-theme="light"] .theme-emoji { color: var(--text-secondary); }
     body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg) var(--surface-texture); color: var(--text); }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
