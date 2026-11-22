@@ -7,7 +7,7 @@ services:
     container_name: hotel-ai-web
     env_file: .env
     ports:
-      - "8000:8000"
+      - "8888:8000"
     volumes:
       - .:/app
       - static_volume:/app/staticfiles

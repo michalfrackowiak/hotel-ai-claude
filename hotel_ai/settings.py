@@ -46,13 +46,14 @@ INSTALLED_APPS = [
     "hotel_ai.bookings",
     "hotel_ai.ai_providers",
     "hotel_ai.calendar_integration",
-    "hotel_ai.voice",
+    "hotel_ai.voice.apps.VoiceConfig",
     "hotel_ai.chat",
     "hotel_ai.accounts",
     "allauth",
     "allauth.account",
     "allauth.socialaccount",
     "allauth.socialaccount.providers.google",
+    "django_openline",
 ]
 
 MIDDLEWARE = [
@@ -169,6 +170,18 @@ SOCIALACCOUNT_PROVIDERS = {
         },
         "AUTH_PARAMS": {"access_type": "offline"},
     }
+}
+
+# ---------------------------------------------------------------------------
+# OpenLine voice integration (django_openline)
+# ---------------------------------------------------------------------------
+OPENLINE = {
+    "BASE_URL": os.environ.get("OPENLINE_BASE_URL", "http://localhost:3000"),
+    "API_KEY": os.environ.get("OPENLINE_API_KEY", ""),
+    "TIMEOUT": int(os.environ.get("OPENLINE_TIMEOUT", "15")),
+    "VERIFY_TLS": os.environ.get("OPENLINE_VERIFY_TLS", "1") == "1",
+    "WEBHOOK_SECRET": os.environ.get("OPENLINE_WEBHOOK_SECRET", ""),
+    "DEFAULT_STREAM_URL": os.environ.get("OPENLINE_DEFAULT_STREAM_URL", "wss://localhost:8000/voice/stream/"),
 }
 
 # ---------------------------------------------------------------------------

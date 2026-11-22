@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "django-openline"
+version = "0.1.0"
+description = "Reusable Django app for the OpenLine self-hosted voice API (an Android phone's SIM as a programmable phone line)."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+dependencies = [
+    "Django>=4.2",
+    "requests>=2.28",
+]
+classifiers = [
+    "Framework :: Django",
+    "Framework :: Django :: 4.2",
+    "Framework :: Django :: 5.0",
+    "Framework :: Django :: 5.1",
+    "Framework :: Django :: 5.2",
+    "Programming Language :: Python :: 3",
+    "Topic :: Communications :: Telephony",
+]
+
+[tool.setuptools.packages.find]
+include = ["django_openline*"]

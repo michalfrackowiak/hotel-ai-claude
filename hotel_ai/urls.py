@@ -161,4 +161,5 @@ urlpatterns = [
     path("voice/", include("hotel_ai.voice.urls")),
     path("chat/", include("hotel_ai.chat.urls")),
     path("accounts/", include("hotel_ai.accounts.urls")),
+    path("integrations/openline/", include("django_openline.urls")),
 ]

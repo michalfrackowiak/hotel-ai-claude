@@ -15,10 +15,8 @@ RUN apt-get update \
         build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
-
 COPY . /app
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Migrations + seed providers run at container start so every new container
 # brings itself up to date regardless of image age. Skips are exposed via
