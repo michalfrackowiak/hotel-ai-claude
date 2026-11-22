@@ -365,3 +365,73 @@ class TestGoogleOAuthRedirect:
         # allauth redirects to Google's OAuth endpoint; status is 302
         assert resp.status_code == 302
         assert "accounts.google.com" in resp.url or "google.com" in resp.url
+
+
+# ---------------------------------------------------------------------------
+# Functional / end-to-end tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestPasswordChangeFunctional:
+    """End-to-end password change flow: user stays logged in and lands on profile."""
+
+    def test_password_change_retains_session_and_redirects_to_profile(self, client, django_user_model):
+        """Full flow: log in, change password, stay logged in, reach profile with lang=pl."""
+        user = django_user_model.objects.create_user(username="funcretain", password="oldpwd")
+        client.force_login(user)
+
+        # 1. Load the password change page in Polish.
+        resp = client.get(reverse("accounts:password-change"), {"lang": "pl"})
+        assert resp.status_code == 200
+        assert "Zmień hasło" in resp.content.decode()
+
+        # 2. Submit a valid password change.
+        resp = client.post(
+            reverse("accounts:password-change"),
+            {
+                "oldpassword": "oldpwd",
+                "password1": "newpwd123",
+                "password2": "newpwd123",
+                "lang": "pl",
+            },
+        )
+        # Redirect back to profile preserving ?lang=pl (no logout).
+        assert resp.status_code == 302
+        assert resp["Location"].endswith("/accounts/profile/?lang=pl")
+
+        # 3. User is still authenticated — profile loads without a login redirect.
+        resp = client.get(reverse("accounts:profile"), {"lang": "pl"})
+        assert resp.status_code == 200
+        assert resp.wsgi_request.user == user
+        user.refresh_from_db()
+        assert user.check_password("newpwd123")
+
+
+@pytest.mark.django_db
+class TestDebugLogsFunctional:
+    """Staff-only debug-logs view."""
+
+    def test_debug_logs_requires_staff(self, client, django_user_model):
+        """A non-staff user cannot access the debug-logs view (redirects to login)."""
+        user = django_user_model.objects.create_user(username="nostaff", password="pass")
+        client.force_login(user)
+        resp = client.get(reverse("accounts:debug-logs"))
+        assert resp.status_code == 302
+        assert "/login/" in resp.url
+
+    def test_debug_logs_accessible_by_staff(self, client, django_user_model):
+        """A staff user can view recent application log entries."""
+        user = django_user_model.objects.create_user(username="staffmember", password="pass", is_staff=True)
+        client.force_login(user)
+        resp = client.get(reverse("accounts:debug-logs"))
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "Debug logs" in body or "Dziennik debug" in body
+        assert b"logs/hotel-ai.log" in resp.content or b"Log file" in resp.content or b"Plik" in resp.content
+
+    def test_debug_logs_requires_login(self, client):
+        """Anonymous users are redirected to login."""
+        resp = client.get(reverse("accounts:debug-logs"))
+        assert resp.status_code == 302
+        assert "/login/" in resp.url

@@ -353,3 +353,52 @@ def test_voice_turn_endpoint_full_flow_with_mocked_provider():
     assert body["action"] == "reply"
     assert body["error"] is None
     fake.turn.assert_called_once_with("AA==", mime="audio/webm")
+
+
+# ---------------------------------------------------------------------------
+# Functional / end-to-end tests for voice page animations
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestVoicePageAnimationsFunctional:
+    """The voice call page must render animation elements for the UX."""
+
+    def test_call_page_renders_mic_and_waveform_elements(self, client):
+        """Idle state: mic icon present, waveform wrapper present but hidden."""
+        resp = client.get("/voice/")
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert 'id="micIcon"' in content
+        assert 'id="waveformWrapper"' in content
+        assert 'id="speakingContainer"' in content
+        assert 'id="status"' in content
+        assert 'id="callBtn"' in content
+        assert 'id="stopBtn"' in content
+
+    def test_call_page_has_waveform_bars(self, client):
+        """Seven wave-bar elements are present for the real-time visualizer."""
+        resp = client.get("/voice/")
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert 'class="wave-bar"' in content
+        # Count wave-bar occurrences (7 bars).
+        assert content.count('class="wave-bar"') == 7
+
+    def test_call_page_has_pulse_rings_for_agent_speaking(self, client):
+        """Agent-speaking state shows pulse-ring animations around a ball."""
+        resp = client.get("/voice/")
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert content.count('class="pulse-ring"') == 3
+        assert 'class="ball"' in content
+
+    def test_call_page_polish_renders_animations(self, client):
+        """Polish voice page includes the same animation structure."""
+        resp = client.get("/voice/?lang=pl")
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert 'id="micIcon"' in content
+        assert 'id="waveformWrapper"' in content
+        assert 'id="speakingContainer"' in content
+        assert "Głosowa recepcja".encode("utf-8") in resp.content
