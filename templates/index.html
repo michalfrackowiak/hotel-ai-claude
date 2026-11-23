@@ -54,6 +54,8 @@
     .btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.875rem 1.75rem; border-radius: 8px; font-size: 1rem; font-weight: 500; text-decoration: none; transition: all 0.2s; cursor: pointer; border: none; }
     .btn-primary { background: var(--primary); color: white; }
     .btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(26,115,232,0.3); }
+    .btn-orange { background: #ff6b00; color: white; }
+    .btn-orange:hover { background: #e55f00; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(255,107,0,0.3); }
     .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
     .btn-secondary:hover { background: var(--bg); border-color: var(--primary); color: var(--primary); }
     .features { padding: 4rem 2rem; max-width: 1200px; margin: 0 auto; }
@@ -109,8 +111,9 @@
     <h2>{% if language == "pl" %}Twój pobyt napędzany przez AI czeka{% else %}Your AI-Powered Stay Awaits{% endif %}</h2>
     <p>{% if language == "pl" %}Doświadcz bezproblemowej rezerwacji dzięki naszemu inteligentnemu recepcjonistowi. Dostępne w języku polskim i angielskim.{% else %}Experience seamless reservation with our intelligent concierge. Available in English and Polish.{% endif %}</p>
     <div class="hero-actions">
-      <a href="/voice/?lang={{ language }}" class="btn btn-primary">🎙️ {% if language == "pl" %}Rozpocznij rozmowę{% else %}Start Voice Call{% endif %}</a>
-      <a href="/chat/?lang={{ language }}" class="btn btn-secondary">💬 {% if language == "pl" %}Otwórz czat{% else %}Open Chat{% endif %}</a>
+      <a href="/booking/?lang={{ language }}" class="btn btn-orange">📅 {% if language == "pl" %}Rezerwuj pokój{% else %}Book a Room{% endif %}</a>
+      <a href="/voice/?lang={{ language }}" class="btn btn-secondary">🎙️ {% if language == "pl" %}Rozmowa głosowa{% else %}Voice Call{% endif %}</a>
+      <a href="/chat/?lang={{ language }}" class="btn btn-secondary">💬 {% if language == "pl" %}Czat AI{% else %}AI Chat{% endif %}</a>
     </div>
   </section>
 
@@ -151,7 +154,7 @@
           </ul>
         </div>
         <div class="room-card-footer">
-          <a href="/chat/?lang={{ language }}" class="btn btn-primary">{% if language == "pl" %}Rezerwuj{% else %}Book Now{% endif %}</a>
+          <a href="/booking/?lang={{ language }}" class="btn btn-orange">📅 {% if language == "pl" %}Rezerwuj{% else %}Book Now{% endif %}</a>
         </div>
       </div>
       <div class="room-card">
@@ -168,7 +171,7 @@
           </ul>
         </div>
         <div class="room-card-footer">
-          <a href="/chat/?lang={{ language }}" class="btn btn-primary">{% if language == "pl" %}Rezerwuj{% else %}Book Now{% endif %}</a>
+          <a href="/booking/?lang={{ language }}" class="btn btn-orange">📅 {% if language == "pl" %}Rezerwuj{% else %}Book Now{% endif %}</a>
         </div>
       </div>
       <div class="room-card">
@@ -186,7 +189,7 @@
           </ul>
         </div>
         <div class="room-card-footer">
-          <a href="/chat/?lang={{ language }}" class="btn btn-primary">{% if language == "pl" %}Rezerwuj{% else %}Book Now{% endif %}</a>
+          <a href="/booking/?lang={{ language }}" class="btn btn-orange">📅 {% if language == "pl" %}Rezerwuj{% else %}Book Now{% endif %}</a>
         </div>
       </div>
     </div>

@@ -7,6 +7,7 @@ from django.shortcuts import render
 from django.urls import include, path
 
 from hotel_ai.bookings.models import Booking, BookingLog, RoomType, Room
+from hotel_ai.bookings.views import booking_confirm, booking_form
 
 
 def health(request):
@@ -156,6 +157,8 @@ urlpatterns = [
     path("dashboard/", dashboard, name="dashboard"),
     path("admin/", admin.site.urls),
     path("api/", include("hotel_ai.bookings.urls")),
+    path("booking/", booking_form, name="booking-form"),
+    path("booking/confirm", booking_confirm, name="booking-confirm"),
     path("api/ai/", include("hotel_ai.ai_providers.urls")),
     path("api/calendar/", include("hotel_ai.calendar_integration.urls")),
     path("voice/", include("hotel_ai.voice.urls")),

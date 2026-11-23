@@ -609,3 +609,14 @@ class RoomBulkUpdateView(APIView):
         }
         status_code = 200 if not errors else 207
         return JsonResponse(result, status=status_code)
+
+def booking_form(request):
+    """Booking form page."""
+    language = request.GET.get("lang", "en")
+    return render(request, "bookings/booking.html", {"language": language})
+
+
+def booking_confirm(request):
+    """Booking confirmation page."""
+    language = request.GET.get("lang", "en")
+    return render(request, "bookings/confirm.html", {"language": language})
