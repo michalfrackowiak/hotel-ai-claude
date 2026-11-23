@@ -187,9 +187,9 @@
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 10px;
-    padding: 1.1rem;
+    padding: 1rem 1.15rem 1.1rem;
     box-shadow: 0 8px 24px rgba(0,0,0,0.14);
-    width: 300px;
+    width: 320px;
     margin-top: 6px;
   }
   .occ-popover.open { display: block; }
@@ -197,41 +197,133 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.5rem 0;
+    padding: 0.6rem 0;
     border-bottom: 1px solid var(--border);
   }
   .occ-row:last-of-type { border-bottom: none; }
-  .occ-row-label { font-size: 0.85rem; font-weight: 500; }
-  .occ-row-sub { font-size: 0.72rem; color: var(--text-secondary); }
+  .occ-row-label { font-size: 0.875rem; font-weight: 400; color: var(--text); }
+  .occ-row-sub { font-size: 0.72rem; color: var(--text-secondary); margin-top: 2px; line-height: 1.35; max-width: 155px; }
+  /* Boxed counter — rounded‑rect frame around value */
   .occ-counter {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    height: 38px;
+    min-width: 110px;
   }
   .occ-btn {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    border: 1px solid var(--border);
-    background: var(--bg);
-    color: var(--text);
-    font-size: 1rem;
+    width: 38px;
+    height: 38px;
+    border: none;
+    border-right: 1px solid var(--border);
+    background: transparent;
+    color: #1a73e8;
+    font-size: 1.15rem;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: background 0.12s;
+    flex-shrink: 0;
   }
-  .occ-btn:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
-  .occ-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-  .occ-val { font-size: 0.9rem; font-weight: 500; min-width: 1.5rem; text-align: center; }
+  .occ-btn:last-child { border-right: none; }
+  .occ-btn:hover:not(:disabled) { background: #e8f0fe; }
+  .occ-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .occ-val { font-size: 0.95rem; font-weight: 500; min-width: 36px; text-align: center; }
+  /* Child age selector row */
+  .child-age-row {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.4rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .child-age-select {
+    appearance: auto;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.25rem 0.4rem;
+    font-size: 0.82rem;
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    height: 30px;
+  }
+  .occ-help-text {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    line-height: 1.45;
+    padding: 0.45rem 0 0.6rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 0.1rem;
+  }
+  /* Toggle switch */
   .occ-toggle-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.5rem 0;
+    padding: 0.6rem 0;
   }
-  .occ-toggle input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
+  .occ-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    cursor: pointer;
+    font-size: 0.875rem;
+    color: var(--text);
+    user-select: none;
+  }
+  .occ-toggle input[type="checkbox"] { display: none; }
+  .occ-switch-track {
+    width: 36px;
+    height: 20px;
+    border-radius: 10px;
+    background: #ccc;
+    position: relative;
+    transition: background 0.18s;
+    flex-shrink: 0;
+  }
+  .occ-switch-thumb {
+    position: absolute;
+    left: 2px;
+    top: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.22);
+    transition: transform 0.18s;
+  }
+  .occ-toggle input:checked + .occ-switch-track { background: #1a73e8; }
+  .occ-toggle input:checked + .occ-switch-track .occ-switch-thumb { transform: translateX(16px); }
+  /* Assisted-animal note */
+  .occ-assist-note {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    padding: 0.15rem 0 0.6rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 0.5rem;
+  }
+  .occ-assist-note a { color: #1a73e8; text-decoration: underline; }
+  /* Done button */
+  .occ-done-btn {
+    display: block;
+    width: 100%;
+    margin-top: 0.85rem;
+    padding: 0.7rem 0;
+    border: 1px solid #1a73e8;
+    border-radius: 6px;
+    background: transparent;
+    color: #1a73e8;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+    transition: background 0.12s;
+  }
+  .occ-done-btn:hover { background: #e8f0fe; }
 
   /* Flatpickr overrides */
   .flatpickr-calendar {
@@ -334,10 +426,7 @@
       <!-- Occupancy Popover -->
       <div class="occ-popover" id="occPopover">
         <div class="occ-row">
-          <div>
-            <div class="occ-row-label">Adults</div>
-            <div class="occ-row-sub">Ages 13 or above</div>
-          </div>
+          <span class="occ-row-label">Adults</span>
           <div class="occ-counter">
             <button class="occ-btn" id="adultMinus" disabled>−</button>
             <span class="occ-val" id="adultVal">2</span>
@@ -345,10 +434,17 @@
           </div>
         </div>
         <div class="occ-row">
-          <div>
-            <div class="occ-row-label">Rooms</div>
-            <div class="occ-row-sub">Each room holds up to 2 adults</div>
+          <span class="occ-row-label">Children</span>
+          <div class="occ-counter">
+            <button class="occ-btn" id="childMinus" disabled>−</button>
+            <span class="occ-val" id="childVal">0</span>
+            <button class="occ-btn" id="childPlus">+</button>
           </div>
+        </div>
+        <div id="childAgeSelectors" class="child-age-row"></div>
+        <p class="occ-help-text">To find a place to stay that fits your entire group along with correct prices, we need to know how old your children will be at check-out.</p>
+        <div class="occ-row">
+          <span class="occ-row-label">Rooms</span>
           <div class="occ-counter">
             <button class="occ-btn" id="roomMinus" disabled>−</button>
             <span class="occ-val" id="roomVal">1</span>
@@ -356,13 +452,15 @@
           </div>
         </div>
         <div class="occ-toggle-row">
-          <span class="occ-row-label">🅿️ Parking</span>
-          <label class="occ-toggle"><input type="checkbox" id="parkCheck" checked><span>Parking needed</span></label>
+          <span class="occ-row-label">Traveling for work?</span>
+          <label class="occ-toggle"><input type="checkbox" id="businessCheck"><span class="occ-switch-track"><span class="occ-switch-thumb"></span></span></label>
         </div>
         <div class="occ-toggle-row">
-          <span class="occ-row-label">🐾 Pets</span>
-          <label class="occ-toggle"><input type="checkbox" id="petsCheck"><span>Pets allowed</span></label>
+          <span class="occ-row-label">Traveling with pets?</span>
+          <label class="occ-toggle"><input type="checkbox" id="petsCheck"><span class="occ-switch-track"><span class="occ-switch-thumb"></span></span></label>
         </div>
+        <p class="occ-assist-note">Assistance animals aren't considered pets. <a href="#">Read more about traveling with assistance animals</a></p>
+        <button class="occ-done-btn" id="occDoneBtn">Done</button>
       </div>
     </div>
 
@@ -397,9 +495,11 @@
   let checkIn = '';
   let checkOut = '';
   let adults = 2;
+  let children = 0;
+  const childAges = []; // populated lazily when children is set
   let rooms = 1;
-  let parking = true;
-  let pets = false;
+  let business = false;
+  let petsFlag = false;
 
   // --- DOM ---
   const dateSection  = document.getElementById('dateSection');
@@ -459,50 +559,98 @@
 
   // --- Occupancy Logic ---
   document.getElementById('adultMinus').addEventListener('click', () => {
-    if (adults > 1) { adults--; updateOccDisplay(); }
+    if (adults > 1) { adults--; updateOccDisplay(); renderChildAges(); }
   });
   document.getElementById('adultPlus').addEventListener('click', () => {
     const max = rooms * 2;
     if (adults < max) { adults++; updateOccDisplay(); }
   });
+  document.getElementById('childMinus').addEventListener('click', () => {
+    if (children > 0) {
+      children--;
+      childAges.pop();
+      if (adults + children > rooms * 2) adults = Math.max(1, rooms * 2 - children);
+      updateOccDisplay();
+      renderChildAges();
+    }
+  });
+  document.getElementById('childPlus').addEventListener('click', () => {
+    children++;
+    childAges.push(0);
+    if (adults + children > rooms * 2) adults = rooms * 2 - children;
+    updateOccDisplay();
+    renderChildAges();
+  });
   document.getElementById('roomMinus').addEventListener('click', () => {
     if (rooms > 1) {
       rooms--;
-      if (adults > rooms * 2) adults = rooms * 2;
+      const maxPax = rooms * 2;
+      const total = adults + children;
+      if (total > maxPax) {
+        adults = Math.max(1, maxPax - children);
+      }
       updateOccDisplay();
     }
   });
   document.getElementById('roomPlus').addEventListener('click', () => {
-    if (rooms < 10) { rooms++; updateOccDisplay(); }
+    if (rooms < 10) { rooms++; updateOccDisplay(); renderChildAges(); }
   });
-  document.getElementById('parkCheck').addEventListener('change', (e) => {
-    parking = e.target.checked;
+  document.getElementById('businessCheck').addEventListener('change', (e) => {
+    business = e.target.checked;
     updateOccDisplay();
   });
   document.getElementById('petsCheck').addEventListener('change', (e) => {
-    pets = e.target.checked;
+    petsFlag = e.target.checked;
     updateOccDisplay();
   });
 
+  function renderChildAges() {
+    const container = document.getElementById('childAgeSelectors');
+    container.innerHTML = '';
+    for (let i = 0; i < children; i++) {
+      const sel = document.createElement('select');
+      sel.className = 'child-age-select';
+      sel.dataset.idx = i;
+      for (let a = 0; a <= 17; a++) {
+        const opt = document.createElement('option');
+        opt.value = a;
+        opt.textContent = a + (a === 1 ? ' year old' : ' years old');
+        sel.appendChild(opt);
+      }
+      if (childAges[i] != null) sel.value = childAges[i];
+      sel.addEventListener('change', (e) => { childAges[parseInt(e.target.dataset.idx)] = parseInt(e.target.value); });
+      container.appendChild(sel);
+    }
+  }
+
   function updateOccDisplay() {
     const maxAdults = rooms * 2;
+    const maxTotal = rooms * 2;
+    const totalPax = adults + children;
     document.getElementById('adultMinus').disabled = adults <= 1;
-    document.getElementById('adultPlus').disabled = adults >= maxAdults;
+    document.getElementById('adultPlus').disabled = adults >= Math.min(10, maxTotal - children);
+    document.getElementById('childMinus').disabled = children <= 0;
+    document.getElementById('childPlus').disabled = totalPax >= maxTotal;
     document.getElementById('roomMinus').disabled = rooms <= 1;
     document.getElementById('roomPlus').disabled = rooms >= 10;
     document.getElementById('adultVal').textContent = adults;
+    document.getElementById('childVal').textContent = children;
     document.getElementById('roomVal').textContent = rooms;
 
-    occDisplay.textContent = `${adults} adult${adults > 1 ? 's' : ''} · ${rooms} room${rooms > 1 ? 's' : ''}`;
-    const parts = [];
-    if (parking) parts.push('Parking');
-    if (pets) parts.push('Pets');
-    occSub.textContent = parts.join(' · ') || 'No extras';
+    const parts = [` ${adults} adult${adults !== 1 ? 's' : ''}`];
+    if (children > 0) parts.push(`${children} child${children !== 1 ? 'ren' : ''}`);
+    parts.push(`${rooms} room${rooms > 1 ? 's' : ''}`);
+    occDisplay.textContent = parts.join(' · ');
+    occSub.textContent = business ? 'Traveling for work?' : (petsFlag ? 'Traveling with pets?' : '');
   }
+
+  document.getElementById('occDoneBtn').addEventListener('click', () => {
+    closeAllPopovers();
+  });
 
   // Occupancy section toggle
   occSection.addEventListener('click', (e) => {
-    if (e.target.closest('.occ-btn') || e.target.closest('.occ-toggle input')) return;
+    if (e.target.closest('.occ-btn') || e.target.closest('.occ-done-btn') || e.target.closest('.child-age-select')) return;
     const isOpen = occPopover.classList.contains('open');
     closeAllPopovers();
     if (!isOpen) occPopover.classList.add('open');
@@ -530,10 +678,13 @@
       return;
     }
     resultsTitle.style.display = 'block';
-    resultsTitle.textContent = `Available rooms · ${checkIn} → ${checkOut} · ${adults} adult${adults>1?'s':''} · ${rooms} room${rooms>1?'s':''}`;
+    const totalG = adults + children;
+    const guestLabel = `${totalG} guest${totalG !== 1 ? 's' : ''}${children > 0 ? ` (${adults}+${children}c)` : ''}`;
+    resultsTitle.textContent = `Available rooms · ${checkIn} → ${checkOut} · ${guestLabel}`;
     roomGrid.innerHTML = '<p class="loading-msg">Searching rooms…</p>';
     try {
-      const resp = await fetch(`/api/availability/?check_in=${encodeURIComponent(checkIn)}&check_out=${encodeURIComponent(checkOut)}&guests=${adults}`, {
+      const totalGuests = adults + children;
+      const resp = await fetch(`/api/availability/?check_in=${encodeURIComponent(checkIn)}&check_out=${encodeURIComponent(checkOut)}&guests=${totalGuests}`, {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
       });
       const data = await resp.json();
@@ -575,7 +726,8 @@
   }
 
   window._selectRoom = function(roomType) {
-    window.location.href = `/booking/confirm?room_type=${encodeURIComponent(roomType)}&check_in=${checkIn}&check_out=${checkOut}&guests=${adults}&parking=${parking}&pets=${pets}&rooms=${rooms}`;
+    const totalG2 = adults + children;
+    window.location.href = `/booking/confirm?room_type=${encodeURIComponent(roomType)}&check_in=${checkIn}&check_out=${checkOut}&guests=${totalG2}&business=${business}&pets=${petsFlag}&rooms=${rooms}`;
   };
 
   // --- Search Button ---
