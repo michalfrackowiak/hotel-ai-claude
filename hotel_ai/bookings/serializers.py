@@ -149,7 +149,7 @@ class PricingRequestSerializer(serializers.Serializer):
 
 class BookingRequestSerializer(serializers.Serializer):
     room_type = serializers.CharField()
-    room_number = serializers.CharField()
+    room_number = serializers.CharField(required=False, allow_blank=True, default="")
     check_in = serializers.DateField()
     check_out = serializers.DateField()
     guests = serializers.IntegerField(min_value=1, default=1)

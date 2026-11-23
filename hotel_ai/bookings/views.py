@@ -213,13 +213,28 @@ class BookingCreateView(APIView):
             return JsonResponse(
                 {"detail": f"Unknown room type '{data['room_type']}'"}, status=404
             )
-        try:
-            room = Room.objects.get(room_number=data["room_number"], room_type=room_type)
-        except Room.DoesNotExist:
-            return JsonResponse(
-                {"detail": f"Room '{data['room_number']}' not found for that room type"},
-                status=404,
+        room_number = data.get("room_number")
+        if room_number:
+            try:
+                room = Room.objects.get(room_number=room_number, room_type=room_type)
+            except Room.DoesNotExist:
+                return JsonResponse(
+                    {"detail": f"Room '{room_number}' not found for that room type"},
+                    status=404,
+                )
+        else:
+            rooms = find_available_rooms(
+                room_type=room_type,
+                check_in=data["check_in"],
+                check_out=data["check_out"],
+                guests=data["guests"],
             )
+            if not rooms:
+                return JsonResponse(
+                    {"detail": "No rooms available for the requested dates and guests"},
+                    status=409,
+                )
+            room = rooms[0]
 
         client = resolve_client(
             first_name=data["first_name"],
