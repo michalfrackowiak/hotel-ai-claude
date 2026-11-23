@@ -402,3 +402,97 @@ class TestVoicePageAnimationsFunctional:
         assert 'id="waveformWrapper"' in content
         assert 'id="speakingContainer"' in content
         assert "Głosowa recepcja".encode("utf-8") in resp.content
+
+# ---------------------------------------------------------------------------
+# Voice history endpoint
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_voice_history_returns_empty_for_unknown_session(client):
+    resp = client.get("/voice/history/", {"session_key": "no-such-session"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["messages"] == []
+    assert body["booking_id"] is None
+
+
+@pytest.mark.django_db
+def test_voice_history_returns_empty_when_no_session_key(client):
+    resp = client.get("/voice/history/")
+    assert resp.status_code == 200
+    assert resp.json()["messages"] == []
+
+
+@pytest.mark.django_db
+def test_voice_history_returns_transcript_lines(client):
+    from hotel_ai.ai_providers.models import Conversation, Message
+    conv = Conversation.objects.create(session_key="hist-sess", channel="voice", language="en")
+    Message.objects.create(conversation=conv, role="user", content="I want a room")
+    Message.objects.create(conversation=conv, role="assistant", content="We have doubles available")
+    Message.objects.create(conversation=conv, role="user", content="Book it for two nights")
+
+    resp = client.get("/voice/history/", {"session_key": "hist-sess"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["session_key"] == "hist-sess"
+    assert len(body["messages"]) == 3
+    assert body["messages"][0]["content"] == "I want a room"
+    assert body["messages"][1]["content"] == "We have doubles available"
+    assert body["messages"][2]["content"] == "Book it for two nights"
+    assert body["booking_id"] is None
+
+
+@pytest.mark.django_db
+def test_voice_history_extracts_booking_id_from_assistant_content(client):
+    from hotel_ai.ai_providers.models import Conversation, Message
+    conv = Conversation.objects.create(session_key="hist-booked", channel="voice", language="en")
+    Message.objects.create(conversation=conv, role="user", content="Book a room")
+    Message.objects.create(
+        conversation=conv, role="assistant",
+        content='{"status":"confirmed","booking_id":42,"room":"Double"}'
+    )
+
+    resp = client.get("/voice/history/", {"session_key": "hist-booked"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["booking_id"] == 42
+
+
+@pytest.mark.django_db
+def test_voice_history_limits_messages(client):
+    from hotel_ai.ai_providers.models import Conversation, Message
+    conv = Conversation.objects.create(session_key="hist-limit", channel="voice", language="en")
+    for i in range(10):
+        Message.objects.create(conversation=conv, role="user", content=f"msg {i}")
+        Message.objects.create(conversation=conv, role="assistant", content=f"reply {i}")
+
+    resp = client.get("/voice/history/", {"session_key": "hist-limit", "limit": "5"})
+    assert resp.status_code == 200
+    assert len(resp.json()["messages"]) == 5
+
+
+@pytest.mark.django_db
+def test_voice_history_ignores_system_and_tool_messages(client):
+    from hotel_ai.ai_providers.models import Conversation, Message
+    conv = Conversation.objects.create(session_key="hist-filter", channel="voice", language="en")
+    Message.objects.create(conversation=conv, role="system", content="You are an agent")
+    Message.objects.create(conversation=conv, role="tool", content="tool output")
+    Message.objects.create(conversation=conv, role="user", content="hello")
+    Message.objects.create(conversation=conv, role="assistant", content="hi there")
+
+    resp = client.get("/voice/history/", {"session_key": "hist-filter"})
+    assert resp.status_code == 200
+    roles = [m["role"] for m in resp.json()["messages"]]
+    assert roles == ["user", "assistant"]
+    assert "system" not in roles
+    assert "tool" not in roles
+
+
+@pytest.mark.django_db
+def test_call_page_contains_history_element(client):
+    resp = client.get("/voice/")
+    assert resp.status_code == 200
+    content = resp.content.decode()
+    assert 'id="conversationHistory"' in content
+    assert "/voice/history/" in content

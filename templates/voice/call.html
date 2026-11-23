@@ -522,6 +522,29 @@
       background: var(--primary-dark);
     }
 
+    /* Conversation history */
+    #conversationHistory {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0.75rem 1rem;
+      font-size: 0.85rem;
+      line-height: 1.6;
+    }
+    #conversationHistory .hist-header {
+      display: flex; align-items: center; gap: 0.4rem;
+      font-weight: 600; color: var(--text-secondary);
+      margin-bottom: 0.5rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    #conversationHistory .hist-line { padding: 0.2rem 0; }
+    #conversationHistory .hist-line.guest { color: var(--text); }
+    #conversationHistory .hist-line.agent { color: var(--text-secondary); font-style: italic; }
+    #conversationHistory .hist-booked {
+      margin-top: 0.5rem; padding-top: 0.5rem;
+      border-top: 1px solid var(--border);
+      color: var(--green); font-weight: 600; font-size: 0.82rem;
+    }
+
     /* Responsive */
     @media (max-width: 768px) {
       .container { padding: 1rem; padding-top: 4.5rem; }
@@ -577,6 +600,7 @@
         <button class="danger" id="stopBtn" disabled>⏹ {% if language == 'pl' %}Zatrzymaj{% else %}Stop{% endif %}</button>
       </div>
 
+      <div id="conversationHistory" style="display:none; width:100%; margin-bottom:1rem;"></div>
       <div id="transcript"></div>
 
       <div id="bookingBanner">
@@ -622,7 +646,10 @@
       micError: LANG === 'pl' ? '❌ Błąd mikrofonu:' : '❌ Mic error:',
       guest: LANG === 'pl' ? 'Gość:' : 'Guest:',
       agent: LANG === 'pl' ? 'Recepcjonista:' : 'Agent:',
-      errPrefix: LANG === 'pl' ? '[Błąd] ' : '[Error] '
+      errPrefix: LANG === 'pl' ? '[Błąd] ' : '[Error] ',
+      prevConv: LANG === 'pl' ? '📋 Poprzednia rozmowa' : '📋 Previous conversation',
+      loadMore: LANG === 'pl' ? 'Pokaż więcej' : 'Show more',
+      booked: LANG === 'pl' ? '✓ Zarezerwowano pokój' : '✓ Room booked'
     };
 
     let mediaRecorder = null;
@@ -918,6 +945,67 @@
       }
       if (audioContext) audioContext.close();
     });
+
+    // --- Load prior conversation history when returning to a session ---
+    (function() {
+      const histEl = document.getElementById('conversationHistory');
+      if (!histEl) return;
+      const key = window.__session || localStorage.getItem('hotel-voice-session');
+      if (!key) return;
+
+      fetch('/voice/history/?session_key=' + encodeURIComponent(key))
+        .then(r => r.json())
+        .then(data => {
+          const msgs = data.messages || [];
+          if (!msgs.length) return;
+          const maxShow = 4;
+          const recent = msgs.slice(-maxShow);
+          let html = '<div class="hist-header">📋 ' + T.prevConv + '</div>';
+          recent.forEach(m => {
+            const roleCls = m.role === 'user' ? 'guest' : 'agent';
+            const label = m.role === 'user' ? T.guest : T.agent;
+            html += '<div class="hist-line ' + roleCls + '">' + label + ' ' + escHtml(m.content) + '</div>';
+          });
+          if (data.booking_id) {
+            html += '<div class="hist-booked">' + T.booked + ' #' + data.booking_id + '</div>';
+          }
+          histEl.innerHTML = html;
+          histEl.style.display = 'block';
+        })
+        .catch(() => {});
+
+      function escHtml(s) {
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }
+    })();
+
+    // Save session key to localStorage so history reloads on next visit
+    const origSetSession = (() => {
+      const s = window.__setSession;
+      return s || null;
+    })();
+
+    // Watch for session assignment and persist it
+    const _origSetter = Object.getOwnPropertyDescriptor(window, '__session');
+    const origDefine = Object.defineProperty;
+    Object.defineProperty = function(obj, prop, desc) {
+      if (prop === '__session' && desc && desc.value) {
+        localStorage.setItem('hotel-voice-session', desc.value);
+      }
+      return origDefine(obj, prop, desc);
+    };
+
+    // Also intercept via a proxy getter/setter approach
+    let _sessionVal = '';
+    Object.defineProperty(window, '__session', {
+      get() { return _sessionVal; },
+      set(v) { _sessionVal = v; localStorage.setItem('hotel-voice-session', v || ''); },
+      configurable: true
+    });
+
+    // Re-read any previously stored session
+    const storedKey = localStorage.getItem('hotel-voice-session');
+    if (storedKey) window.__session = storedKey;
 
     // --- Dark theme toggle ---
     (function() {
