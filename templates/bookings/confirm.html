@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="{{ language }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hotel Aurora · Booking Confirmation</title>
+<style>
+  :root {
+    --primary: #1a73e8;
+    --primary-dark: #1557b0;
+    --success: #34a853;
+    --bg: #f8f9fa;
+    --surface: #ffffff;
+    --text: #202124;
+    --text-secondary: #5f6368;
+    --border: #dadce0;
+    --error: #ea4335;
+  }
+
+  [data-theme="dark"] {
+    --bg: #0f1929;
+    --surface: #1a2332;
+    --surface-hover: #243342;
+    --surface-texture: url("data:image/svg+xml,%3Csvg viewBox='0 0 120 120' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CFeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+    --text: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --border: #2d3748;
+    --border-light: #3d4759;
+    --primary: #3b82f6;
+    --primary-dark: #2563eb;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --error: #ef4444;
+    --info: #0ea5e9;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: var(--bg) var(--surface-texture);
+    color: var(--text);
+    line-height: 1.6;
+  }
+
+  /* ---------- Confirmation Hero ---------- */
+  .confirm-hero {
+    padding: 3rem 1.5rem;
+    text-align: center;
+    background: linear-gradient(180deg, #e8f0fe 0%, var(--bg) 100%);
+    border-bottom: 1px solid var(--border);
+  }
+  .confirm-hero h1 { font-size: 2rem; font-weight: 600; margin-bottom: 0.5rem; }
+  .confirm-hero p { font-size: 1rem; color: var(--text-secondary); max-width: 600px; margin: 0 auto; }
+
+  /* ---------- Confirmation Card ---------- */
+  .confirm-card { max-width: 500px; margin: 2rem auto; padding: 2rem; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; }
+  .confirm-card h2 { font-size: 1.25rem; font-weight: 550; margin-bottom: 1rem; color: var(--text); }
+  .confirm-card p { font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 1.5rem; }
+
+  /* ---------- Guest Form ---------- */
+  .guest-form { display: grid; gap: 1rem; }
+  .guest-form .form-group { display: flex; flex-direction: column; }
+  .guest-form label { font-size: 0.875rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.25rem; }
+  .guest-form input, .guest-form select { padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: 8px; font-size: 1rem; background: var(--bg); color: var(--text); width: 100%; }
+  .guest-form input:focus, .guest-form select:focus { outline: none; border-color: var(--primary); background: var(--bg); }
+  .guest-form .row { display: flex; gap: 1rem; flex-wrap: wrap; }
+  .guest-form .row .form-group { flex: 1; min-width: 200px; }
+
+  /* ---------- Summary Box ---------- */
+  .confirm-summary { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-top: 1.5rem; }
+  .confirm-summary p { margin: 0.25rem 0; font-size: 0.9rem; }
+  .confirm-summary strong { color: var(--primary); }
+
+  /* ---------- Buttons ---------- */
+  .btn-submit { width: 100%; padding: 0.875rem 1.5rem; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: 550; cursor: pointer; transition: background 0.2s; }
+  .btn-submit:hover { background: var(--primary-dark); }
+  .btn-secondary { width: 100%; padding: 0.875rem 1.5rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; font-size: 1rem; font-weight: 500; cursor: pointer; transition: border-color 0.2s; }
+  .btn-secondary:hover { border-color: var(--primary); color: var(--primary); }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 600px) {
+    .confirm-card { margin: 1rem; padding: 1.5rem; }
+  }
+</style>
+</head>
+
+<body>
+  <header class="confirm-hero">
+    <h1>✅ Booking Confirmed</h1>
+    <p>Your reservation is being processed.</p>
+  </header>
+
+  <main>
+    <div class="confirm-card">
+      <h2>Reservation Details</h2>
+
+      <div class="confirm-summary" id="summary">
+        <p><strong>Room Type:</strong> <span id="summary-room"></span></p>
+        <p><strong>Check-in:</strong> <span id="summary-checkin"></span></p>
+        <p><strong>Check-out:</strong> <span id="summary-checkout"></span></p>
+        <p><strong>Guests:</strong> <span id="summary-guests"></span></p>
+        <p><strong>Total:</strong> <span id="summary-total"></span></p>
+      </div>
+
+      <form class="guest-form" id="guest-form" novalidate>
+        <div class="form-group">
+          <label for="first_name">First Name</label>
+          <input type="text" id="first_name" required placeholder="John">
+        </div>
+        <div class="form-group">
+          <label for="last_name">Last Name</label>
+          <input type="text" id="last_name" required placeholder="Doe">
+        </div>
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" required placeholder="john@example.com">
+        </div>
+        <div class="row">
+          <div class="form-group">
+            <label for="phone">Phone (optional)</label>
+            <input type="tel" id="phone" placeholder="+1 555 123 4567">
+          </div>
+          <div class="form-group">
+            <label for="language">Language</label>
+            <select id="language">
+              <option value="en">English</option>
+              <option value="pl" selected>Polski</option>
+            </select>
+          </div>
+        </div>
+      </form>
+
+      <div style="margin-top: 2rem; text-align: right;">
+        <button type="submit" class="btn-submit">Confirm Booking</button>
+        <button type="button" class="btn-secondary" onclick="window.history.back()">Cancel</button>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // --- Parse URL params ---
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomType = urlParams.get('room_type') || 'Double';
+    const checkIn = urlParams.get('check_in') || '';
+    const checkOut = urlParams.get('check_out') || '';
+    const guests = urlParams.get('guests') || '2';
+
+    // --- Fill summary ---
+    document.getElementById('summary-room').textContent = roomType;
+    document.getElementById('summary-checkin').textContent = checkIn ? new Date(checkIn).toLocaleDateString('en-GB') : '—';
+    document.getElementById('summary-checkout').textContent = checkOut ? new Date(checkOut).toLocaleDateString('en-GB') : '—';
+    document.getElementById('summary-guests').textContent = guests;
+    document.getElementById('summary-total').textContent = 'From 220 PLN / night';
+
+    // --- Form submission ---
+    const form = document.getElementById('guest-form');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const firstName = document.getElementById('first_name').value.trim();
+      const lastName = document.getElementById('last_name').value.trim();
+      const email = document.getElementById('email').value.trim();
+      const phone = document.getElementById('phone').value.trim() || '';
+
+      if (!firstName || !lastName || !email) {
+        alert('Please fill in all required fields.');
+        return;
+      }
+
+      // Show loading state
+      const submitBtn = form.querySelector('.btn-submit');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Saving...';
+
+      try {
+        const resp = await fetch('/api/bookings/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCSRFToken()
+          },
+          body: JSON.stringify({
+            room_type: roomType,
+            check_in: checkIn,
+            check_out: checkOut,
+            guests: parseInt(guests),
+            first_name: firstName,
+            last_name: lastName,
+            email: email,
+            phone: phone,
+            language: document.getElementById('language').value
+          })
+        });
+
+        const data = await resp.json();
+
+        if (resp.ok) {
+          // Show success
+          document.querySelector('.confirm-card').innerHTML = `
+            <h2>🎉 Booking Confirmed!</h2>
+            <p class="confirm-summary"><strong>Booking ID:</strong> ${data.booking.id}</p>
+            <p class="confirm-summary"><strong>Room:</strong> ${roomType}</p>
+            <p class="confirm-summary"><strong>Check-in:</strong> ${new Date(checkIn).toLocaleDateString('en-GB')}</p>
+            <p class="confirm-summary"><strong>Check-out:</strong> ${new Date(checkOut).toLocaleDateString('en-GB')}</p>
+            <p class="confirm-summary"><strong>Guests:</strong> ${guests}</p>
+            <p class="confirm-summary"><strong>Total:</strong> ${data.total_price} ${data.currency}</p>
+            <p class="confirm-summary">${data.message}</p>
+            <button type="button" onclick="window.location.href='/'">Back Home</button>
+          `;
+        } else {
+          alert(data.detail || 'Booking failed. Please try again.');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Confirm Booking';
+        }
+      } catch (err) {
+        alert('Error connecting to server. Please try again.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Confirm Booking';
+      }
+    });
+
+    // --- CSRF token helper ---
+    function getCSRFToken() {
+      let name = 'XSRF-TOKEN';
+      const cookieValue = document.cookie.match('(^|;\\s*)(' + name + ')=([^;]*)');
+      return cookieValue ? cookieValue[3] : '';
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="{{ language }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hotel Aurora · Book a Room</title>
+<style>
+  :root {
+    --primary: #1a73e8;
+    --primary-dark: #1557b0;
+    --success: #34a853;
+    --bg: #f8f9fa;
+    --surface: #ffffff;
+    --text: #202124;
+    --text-secondary: #5f6368;
+    --border: #dadce0;
+    --border-light: #3d4759;
+    --error: #ea4335;
+  }
+
+  [data-theme="dark"] {
+    --bg: #0f1929;
+    --surface: #1a2332;
+    --surface-hover: #243342;
+    --surface-texture: url("data:image/svg+xml,%3Csvg viewBox='0 0 120 120' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CFeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+    --text: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --border: #2d3748;
+    --border-light: #3d4759;
+    --primary: #3b82f6;
+    --primary-dark: #2563eb;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --error: #ef4444;
+    --info: #0ea5e9;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: var(--bg) var(--surface-texture);
+    color: var(--text);
+    line-height: 1.6;
+  }
+
+  /* ---------- Header / Hero ---------- */
+  .hero {
+    padding: 3rem 1.5rem;
+    text-align: center;
+    background: linear-gradient(180deg, #e8f0fe 0%, var(--bg) 100%);
+    border-bottom: 1px solid var(--border);
+  }
+  .hero h1 { font-size: 2.25rem; font-weight: 600; margin-bottom: 0.5rem; }
+  .hero p { font-size: 1.05rem; color: var(--text-secondary); max-width: 600px; margin: 0 auto 2rem; }
+
+  /* ---------- Booking Form ---------- */
+  .booking-form { max-width: 700px; margin: 0 auto; padding: 2rem 1.5rem; }
+  .form-section { margin-bottom: 2rem; }
+  .form-section h2 { font-size: 1.25rem; font-weight: 550; margin-bottom: 1rem; color: var(--text); }
+
+  /* ---------- Date Picker ---------- */
+  .date-picker { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; }
+  .date-picker .form-row { display: flex; gap: 1rem; flex-wrap: wrap; }
+  .date-picker .form-row .form-group { flex: 1; min-width: 200px; }
+  .date-picker label { display: block; font-size: 0.875rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.5rem; }
+  .date-input { width: 100%; padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: 8px; font-size: 1rem; background: var(--bg); color: var(--text); }
+  .date-input:focus { outline: none; border-color: var(--primary); background: var(--bg); }
+  .date-input:hover { border-color: var(--border-light); }
+
+  /* Person count */
+  .person-count .form-row { display: flex; gap: 1rem; align-items: center; }
+  .person-count .form-group { flex: 1; min-width: 150px; }
+  .person-btn { padding: 0.5rem 1rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 1rem; cursor: pointer; transition: border-color 0.2s, background 0.2s; }
+  .person-btn:hover { border-color: var(--primary); background: var(--bg); }
+  .person-btn.active { border-color: var(--primary); background: rgba(26, 115, 232, 0.15); color: var(--primary); }
+  .person-display { padding: 0.5rem 1rem; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; min-width: 80px; text-align: center; font-size: 1rem; }
+  .person-badge { display: inline-block; padding: 0.2rem 0.5rem; background: var(--primary); color: white; border-radius: 10x; font-size: 0.75rem; margin-left: 0.25rem; }
+
+  /* ---------- Room Grid ---------- */
+  .room-grid { margin-top: 2rem; }
+  .room-grid h3 { font-size: 1rem; color: var(--text-secondary); margin-bottom: 0.75rem; }
+  .room-type-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; transition: box-shadow 0.2s; margin-bottom: 1rem; }
+  .room-type-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+  .room-type-header { padding: 1rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .room-type-header h4 { font-size: 1rem; font-weight: 550; color: var(--text); }
+  .room-type-header .available-badge { padding: 0.25rem 0.75rem; background: var(--primary); color: white; border-radius: 100px; font-size: 0.75rem; font-weight: 600; }
+  .room-type-info { padding: 0.75rem 1rem; }
+  .room-type-info p { font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 0.25rem; }
+  .room-type-info .price { font-size: 1.1rem; font-weight: 600; color: var(--primary); margin-bottom: 0.25rem; display: block; }
+  .room-type-footer { padding: 0 1rem 1rem; text-align: right; }
+  .room-type-footer .btn { width: 100%; justify-content: center; }
+
+  /* ---------- Loading / Empty ---------- */
+  .loading { padding: 2rem; text-align: center; color: var(--text-secondary); }
+  .empty { padding: 2rem; text-align: center; color: var(--text-secondary); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 600px) {
+    .form-row { flex-direction: column; gap: 1rem; }
+    .date-picker .form-row .form-group { min-width: 100%; }
+    .person-count .form-row { flex-direction: column; gap: 0.5rem; }
+    .person-btn { width: 100%; }
+  }
+</style>
+</head>
+
+<body>
+  <header class="hero">
+    <h1>🏨 Book Your Stay</h1>
+    <p>Choose your dates and guests, then select from available rooms.</p>
+  </header>
+
+  <main class="booking-form">
+    <!-- Date & Person Selection -->
+    <section class="form-section date-picker">
+      <h2>📅 Select Dates</h2>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="check-in">Check-in</label>
+          <input type="date" id="check-in" class="date-input" placeholder="MM/DD/YYYY">
+        </div>
+        <div class="form-group">
+          <label for="check-out">Check-out</label>
+          <input type="date" id="check-out" class="date-input" placeholder="MM/DD/YYYY">
+        </div>
+      </div>
+    </section>
+
+    <section class="form-section person-count">
+      <h2>👥 Number of Guests</h2>
+      <div class="form-row">
+        <div class="form-group">
+          <button class="person-btn minus" aria-label="Decrease guests">−</button>
+          <span class="person-display" id="person-display">2</span>
+          <button class="person-btn plus" aria-label="Increase guests">+</button>
+        </div>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.5rem;">
+        1 — 10 guests
+      </p>
+    </section>
+
+    <!-- Room Availability Grid -->
+    <section class="room-grid" id="room-grid">
+      <h3>Available Rooms</h3>
+      <div class="loading" id="loading">Searching for rooms...</div>
+    </section>
+  </main>
+
+  <script>
+    // --- State ---
+    let checkIn = '';
+    let checkOut = '';
+    let guests = 2;
+
+    // --- DOM Elements ---
+    const chkIn = document.getElementById('check-in');
+    const chkOut = document.getElementById('check-out');
+    const personDisplay = document.getElementById('person-display');
+    const roomGrid = document.getElementById('room-grid');
+    const loading = document.getElementById('loading');
+
+    // --- Person Count ---
+    function updatePersonDisplay() {
+      personDisplay.textContent = guests;
+    }
+    document.querySelectorAll('.person-btn.plus').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (guests < 10) { guests++; updatePersonDisplay(); }
+      });
+    });
+    document.querySelectorAll('.person-btn.minus').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (guests > 1) { guests--; updatePersonDisplay(); }
+      });
+    });
+
+    // --- Date validation ---
+    function validateDates() {
+      if (!checkIn || !checkOut) return false;
+      return new Date(checkOut) > new Date(checkIn);
+    }
+
+    // --- Fetch Available Rooms ---
+    async function loadRooms() {
+      if (!validateDates()) {
+        roomGrid.innerHTML = '<p class="empty">Select valid check-in and check-out dates (check-out must be after check-in).</p>';
+        return;
+      }
+      loading.style.display = 'block';
+      roomGrid.innerHTML = '';
+      try {
+        const resp = await fetch(`/api/availability/?check_in=${encodeURIComponent(checkIn)}&check_out=${encodeURIComponent(checkOut)}&guests=${guests}`, {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await resp.json();
+        loading.style.display = 'none';
+        if (!data.available) {
+          roomGrid.innerHTML = '<p class="empty">No rooms available for these dates and guest count.</p>';
+          return;
+        }
+        renderRooms(data);
+      } catch (err) {
+        loading.style.display = 'none';
+        roomGrid.innerHTML = '<p class="empty">Error loading rooms. Please try again.</p>';
+      }
+    }
+
+    // --- Render Room Types ---
+    function renderRooms(data) {
+      if (!data || !data.length) {
+        roomGrid.innerHTML = '<p class="empty">No rooms match your criteria.</p>';
+        return;
+      }
+      roomGrid.innerHTML = '';
+      data.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'room-type-card';
+        card.innerHTML = `
+          <div class="room-type-header">
+            <h4>${item.room_type}</h4>
+            <span class="available-badge">${item.available_rooms} available</span>
+          </div>
+          <div class="room-type-info">
+            <p>${item.capacity} guests max — ${item.base_price_per_night} ${item.currency} / night</p>
+            <p class="price">${item.effective_price_per_night} ${item.currency} / night <span style="font-size:0.85rem; color:var(--text-secondary);">Effective price</span></p>
+            <p style="font-size:0.85rem; color:var(--text-secondary);">Total stay: ${item.total_price} ${item.currency}</p>
+          </div>
+          <div class="room-type-footer">
+            <button class="btn" onclick="selectRoomType('${item.room_type}')">Select</button>
+          </div>
+        `;
+        roomGrid.appendChild(card);
+      });
+    }
+
+    // --- Room Type Selection ---
+    function selectRoomType(roomType) {
+      window.location.href = `/bookings/confirm?room_type=${encodeURIComponent(roomType)}&check_in=${checkIn}&check_out=${checkOut}&guests=${guests}`;
+    }
+
+    // --- Init ---
+    // Set min date to tomorrow
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    chkIn.min = tomorrow.toISOString().split('T')[0];
+    chkOut.min = tomorrow.toISOString().split('T')[0];
+
+    // Date change handler
+    [chkIn, chkOut].forEach(el => {
+      el.addEventListener('change', (e) => {
+        const v = e.target.value;
+        if (e.target === chkIn) checkIn = v;
+        else checkOut = v;
+        updatePersonDisplay();
+        loadRooms();
+      });
+    });
+
+    // Initial load
+    loadRooms();
+  </script>
+</body>
+</html>
