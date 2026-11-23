@@ -459,6 +459,69 @@
       margin-top: 1rem;
     }
 
+    /* Booking confirmation banner */
+    #bookingBanner {
+      display: none;
+      background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+      border: 1px solid #6ee7b7;
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1rem;
+      text-align: left;
+      animation: fadeIn 0.4s ease;
+    }
+    [data-theme="dark"] #bookingBanner {
+      background: linear-gradient(135deg, #064e3b, #065f46);
+      border-color: #34d399;
+    }
+    #bookingBanner.visible { display: block; }
+    #bookingBanner h3 {
+      font-size: 0.95rem;
+      color: #065f46;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    [data-theme="dark"] #bookingBanner h3 { color: #6ee7b7; }
+    #bookingBanner .detail-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.82rem;
+      color: #374151;
+      padding: 0.25rem 0;
+    }
+    [data-theme="dark"] #bookingBanner .detail-row { color: #d1d5db; }
+    #bookingBanner .detail-label { color: var(--text-secondary); }
+    #bookingBanner .detail-value { font-weight: 600; }
+    #bookingBanner .confirm-actions {
+      margin-top: 0.75rem;
+      display: flex;
+      gap: 0.5rem;
+    }
+    #bookingBanner .confirm-actions button {
+      font-size: 0.8rem;
+      padding: 0.4rem 0.9rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    #bookingBanner .confirm-actions button:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+    #bookingBanner .confirm-actions button.primary {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+    #bookingBanner .confirm-actions button.primary:hover {
+      background: var(--primary-dark);
+    }
+
     /* Responsive */
     @media (max-width: 768px) {
       .container { padding: 1rem; padding-top: 4.5rem; }
@@ -515,6 +578,21 @@
       </div>
 
       <div id="transcript"></div>
+
+      <div id="bookingBanner">
+        <h3>✓ {% if language == 'pl' %}Rezerwacja potwierdzona!{% else %}Booking Confirmed{% endif %}</h3>
+        <div class="detail-row"><span class="detail-label">{% if language == 'pl' %}Pokój{% else %}Room{% endif %}:</span> <span class="detail-value" id="bannerRoom"></span></div>
+        <div class="detail-row"><span class="detail-label">{% if language == 'pl' %}Data przyjazdu{% else %}Check-in{% endif %}:</span> <span class="detail-value" id="bannerCheckIn"></span></div>
+        <div class="detail-row"><span class="detail-label">{% if language == 'pl' %}Data wyjazdu{% else %}Check-out{% endif %}:</span> <span class="detail-value" id="bannerCheckOut"></span></div>
+        <div class="detail-row"><span class="detail-label">{% if language == 'pl' %}Noclegi{% else %}Nights{% endif %}:</span> <span class="detail-value" id="bannerNights"></span></div>
+        <div class="detail-row"><span class="detail-label">{% if language == 'pl' %}Goście{% else %}Guests{% endif %}:</span> <span class="detail-value" id="bannerGuests"></span></div>
+        <div class="detail-row"><span class="detail-label">{% if language == 'pl' %}Kwota{% else %}Total{% endif %}:</span> <span class="detail-value" id="bannerPrice"></span></div>
+        <div class="confirm-actions">
+          <button class="primary" onclick="window.location.href='/dashboard/?lang={{ language }}'">{% if language == 'pl' %}📊 Panel recepcji{% else %}📊 View Dashboard{% endif %}</button>
+          <button onclick="dismissBanner()">{% if language == 'pl' %}Zamknij{% else %}Close{% endif %}</button>
+        </div>
+      </div>
+
       <div class="session-info" id="sessionInfo"></div>
     </div>
   </div>
@@ -568,6 +646,54 @@
       div.textContent = `${label} ${text}`;
       transcriptEl.appendChild(div);
       transcriptEl.scrollTop = transcriptEl.scrollHeight;
+    }
+
+    function showBookingBanner(data) {
+      const id = data.booking_id;
+      if (!id) {
+        // Fallback: use raw data if available
+        populateBannerFromData(data);
+        return;
+      }
+      // Fetch full booking details for richer display
+      fetch(`/api/bookings/${id}/`)
+        .then(r => r.json())
+        .then(b => populateBannerFromData({
+          ...data,
+          room_number: b.room_number,
+          check_in: b.check_in,
+          check_out: b.check_out,
+          nights: b.nights,
+          guests: b.guests,
+          total_price: b.total_price,
+          client_name: b.client_name,
+        }))
+        .catch(() => populateBannerFromData(data));
+    }
+
+    function populateBannerFromData(d) {
+      const banner = document.getElementById('bookingBanner');
+      if (!banner) return;
+      document.getElementById('bannerRoom').textContent = d.room_number || d.room || '?';
+      document.getElementById('bannerCheckIn').textContent = d.check_in || '';
+      document.getElementById('bannerCheckOut').textContent = d.check_out || '';
+      document.getElementById('bannerNights').textContent = (d.nights || '?') + ' night' + ((d.nights || 1) > 1 ? 's' : '');
+      document.getElementById('bannerGuests').textContent = (d.guests || 1) + (LANG === 'pl' ? ' os.' : ' guest' + ((d.guests || 1) > 1 ? 's' : ''));
+      const price = d.total_price ? parseFloat(d.total_price).toFixed(2) : '0.00';
+      document.getElementById('bannerPrice').textContent = price + ' PLN';
+      document.querySelector('#bookingBanner h3').innerHTML =
+        (LANG === 'pl' ? '✓ Rezerwacja potwierdzona!' : '✓ Booking Confirmed!');
+      setStatus(
+        (LANG === 'pl' ? `✓ #${d.booking_id} — pomyślnie!` : `✓ Booking #${d.booking_id} confirmed!`),
+        'ready'
+      );
+      banner.classList.add('visible');
+      setTimeout(() => dismissBanner(), 10000);
+    }
+
+    function dismissBanner() {
+      const banner = document.getElementById('bookingBanner');
+      if (banner) banner.classList.remove('visible');
     }
 
     function showMicIdle() {
@@ -701,6 +827,10 @@
               appendTranscript('agent', T.errPrefix + data.error);
               setStatus(T.errPrefix + data.error, 'error');
             } else if (data.text || data.transcript) {
+              // Show booking confirmation banner
+              if (data.booking_id && data.action === 'book') {
+                showBookingBanner(data);
+              }
               if (data.transcript) appendTranscript('guest', data.transcript);
               if (data.text) {
                 appendTranscript('agent', data.text);
