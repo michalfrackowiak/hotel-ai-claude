@@ -1934,3 +1934,211 @@ def test_chat_turn_updates_existing_session_language():
     assert resp.status_code == 200
     conv.refresh_from_db()
     assert conv.language == "pl"
+
+
+# ---------------------------------------------------------------------------
+# PromoCode model and services
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+def test_promo_code_percent_discount(client, double, client_fixture):
+    """Applying a percent discount reduces total price."""
+    from hotel_ai.bookings.models import PromoCode
+    from hotel_ai.bookings.services import apply_promo_code
+
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+        guests=2,
+    )
+    original_price = booking.total_price
+    promo = PromoCode.objects.create(
+        code="SUMMER25",
+        discount_type="percent",
+        discount_value=Decimal("25.00"),
+        valid_from=_dt.date(2026, 6, 1),
+        valid_to=_dt.date(2026, 8, 31),
+        max_uses=10,
+    )
+    client.post(f"/api/bookings/{booking.id}/apply-promo/", json.dumps({"code": "SUMMER25"}), content_type="application/json")
+    booking.refresh_from_db()
+    expected = original_price * Decimal("0.75")
+    assert booking.total_price == expected
+
+
+@pytest.mark.django_db
+def test_promo_code_fixed_discount(client, double, client_fixture):
+    """Applying a fixed discount subtracts a fixed amount from total price."""
+    from hotel_ai.bookings.models import PromoCode
+
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 2),
+        guests=2,
+    )
+    promo = PromoCode.objects.create(
+        code="FIXED50",
+        discount_type="fixed",
+        discount_value=Decimal("50.00"),
+        valid_from=_dt.date(2026, 1, 1),
+        valid_to=_dt.date(2026, 12, 31),
+    )
+    resp = client.post(f"/api/bookings/{booking.id}/apply-promo/", json.dumps({"code": "FIXED50"}), content_type="application/json")
+    assert resp.status_code == 200
+    booking.refresh_from_db()
+    assert booking.total_price == Decimal("250.00")
+
+
+@pytest.mark.django_db
+def test_promo_code_not_found(client):
+    """Requesting an unknown promo code returns 400."""
+    resp = client.get("/api/promo-codes/NONEXISTENT/check/?check_in=2026-07-01")
+    assert resp.status_code == 400
+    assert not resp.json()["valid"]
+
+
+@pytest.mark.django_db
+def test_promo_code_check_missing_check_in(client):
+    """Checking a promo code without check_in parameter returns 400."""
+    resp = client.get("/api/promo-codes/SUMMER25/check/")
+    assert resp.status_code == 400
+    assert "check_in parameter required" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_promo_code_invalid_date_range(client, double):
+    """Promo code validation rejects dates outside the valid range."""
+    from hotel_ai.bookings.models import PromoCode
+
+    rt, _ = double
+    promo = PromoCode.objects.create(
+        code="SUMMER25",
+        discount_type="percent",
+        discount_value=Decimal("25.00"),
+        valid_from=_dt.date(2026, 6, 1),
+        valid_to=_dt.date(2026, 8, 31),
+    )
+    # Check-in in November (outside valid range)
+    resp = client.get("/api/promo-codes/SUMMER25/check/?check_in=2026-11-01")
+    assert resp.status_code == 400
+    assert not resp.json()["valid"]
+
+
+@pytest.mark.django_db
+def test_promo_code_inactive(client):
+    """Inactive promo codes are rejected."""
+    from hotel_ai.bookings.models import PromoCode
+
+    promo = PromoCode.objects.create(
+        code="DEACTIVATED",
+        discount_type="percent",
+        discount_value=Decimal("10.00"),
+        valid_from=_dt.date(2026, 1, 1),
+        valid_to=_dt.date(2026, 12, 31),
+        active=False,
+    )
+    resp = client.get("/api/promo-codes/DEACTIVATED/check/?check_in=2026-07-01")
+    assert resp.status_code == 400
+    assert not resp.json()["valid"]
+
+
+@pytest.mark.django_db
+def test_promo_code_max_uses_exceeded(client):
+    """Promo code rejected when max uses reached."""
+    from hotel_ai.bookings.models import PromoCode
+
+    promo = PromoCode.objects.create(
+        code="LIMITED",
+        discount_type="percent",
+        discount_value=Decimal("10.00"),
+        valid_from=_dt.date(2026, 1, 1),
+        valid_to=_dt.date(2026, 12, 31),
+        max_uses=1,
+        current_uses=1,
+    )
+    resp = client.get("/api/promo-codes/LIMITED/check/?check_in=2026-07-01")
+    assert resp.status_code == 400
+    assert not resp.json()["valid"]
+
+
+@pytest.mark.django_db
+def test_promo_code_apply_increments_usage(client, double, client_fixture):
+    """Applying a promo code increments its current_uses counter."""
+    from hotel_ai.bookings.models import PromoCode
+
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 2),
+        guests=2,
+    )
+    promo = PromoCode.objects.create(
+        code="USED10",
+        discount_type="percent",
+        discount_value=Decimal("10.00"),
+        valid_from=_dt.date(2026, 1, 1),
+        valid_to=_dt.date(2026, 12, 31),
+        max_uses=5,
+    )
+    client.post(f"/api/bookings/{booking.id}/apply-promo/", json.dumps({"code": "USED10"}), content_type="application/json")
+    promo.refresh_from_db()
+    assert promo.current_uses == 1
+
+
+@pytest.mark.django_db
+def test_promo_code_log_entry_on_apply(client, double, client_fixture):
+    """Applying a promo code creates a 'promo_applied' log entry."""
+    from hotel_ai.bookings.models import PromoCode
+
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 2),
+        guests=2,
+    )
+    promo = PromoCode.objects.create(
+        code="LOGTEST",
+        discount_type="percent",
+        discount_value=Decimal("10.00"),
+        valid_from=_dt.date(2026, 1, 1),
+        valid_to=_dt.date(2026, 12, 31),
+    )
+    client.post(f"/api/bookings/{booking.id}/apply-promo/", json.dumps({"code": "LOGTEST"}), content_type="application/json")
+    logs = list(Booking.objects.get(pk=booking.id).logs.order_by("created_at"))
+    assert any(log.action == "promo_applied" for log in logs)
+
+
+@pytest.mark.django_db
+def test_promo_code_min_price_floor(client, double, client_fixture):
+    """Discounted price cannot go below zero."""
+    from hotel_ai.bookings.models import PromoCode
+
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 2),
+        guests=2,
+    )
+    promo = PromoCode.objects.create(
+        code="OVERDISCOUNT",
+        discount_type="percent",
+        discount_value=Decimal("150.00"),
+        valid_from=_dt.date(2026, 1, 1),
+        valid_to=_dt.date(2026, 12, 31),
+    )
+    resp = client.post(f"/api/bookings/{booking.id}/apply-promo/", json.dumps({"code": "OVERDISCOUNT"}), content_type="application/json")
+    assert resp.status_code == 200
+    booking.refresh_from_db()
+    assert booking.total_price == Decimal("0.00")

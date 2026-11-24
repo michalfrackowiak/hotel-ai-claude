@@ -16,6 +16,7 @@ from hotel_ai.bookings.models import (
     BookingStatus,
     Client,
     PricingRule,
+    PromoCode,
     Room,
     RoomType,
 )
@@ -42,6 +43,8 @@ class Command(BaseCommand):
         self._seed_pricing_rules(room_types)
         self.stdout.write("Seeding demo booking...")
         self._seed_demo_booking(room_types)
+        self.stdout.write("Seeding promo codes...")
+        self._seed_promo_codes()
         self.stdout.write("Ensuring superuser...")
         self._ensure_superuser()
         self.stdout.write(self.style.SUCCESS("Seed data complete."))
@@ -157,6 +160,49 @@ class Command(BaseCommand):
             )
         except Exception as exc:  # pragma: no cover - defensive
             self.stdout.write(self.style.WARNING(f"Demo booking skipped: {exc}"))
+
+    def _seed_promo_codes(self):
+        """Seed demo promo codes (idempotent)."""
+        today = _dt.date.today()
+        # WELCOME10 - 10% off, valid for a year
+        PromoCode.objects.update_or_create(
+            code="WELCOME10",
+            defaults={
+                "discount_type": "percent",
+                "discount_value": Decimal("10.00"),
+                "valid_from": today,
+                "valid_to": today.replace(year=today.year + 1),
+                "max_uses": 100,
+                "current_uses": 0,
+                "active": True,
+            },
+        )
+        # SUMMER25 - 25% off, valid for summer season
+        PromoCode.objects.update_or_create(
+            code="SUMMER25",
+            defaults={
+                "discount_type": "percent",
+                "discount_value": Decimal("25.00"),
+                "valid_from": today.replace(month=6, day=1),
+                "valid_to": today.replace(month=8, day=31),
+                "max_uses": 50,
+                "current_uses": 0,
+                "active": True,
+            },
+        )
+        # FIXED50 - 50 PLN off, valid for a year
+        PromoCode.objects.update_or_create(
+            code="FIXED50",
+            defaults={
+                "discount_type": "fixed",
+                "discount_value": Decimal("50.00"),
+                "valid_from": today,
+                "valid_to": today.replace(year=today.year + 1),
+                "max_uses": 200,
+                "current_uses": 0,
+                "active": True,
+            },
+        )
 
     def _ensure_superuser(self):
         User = get_user_model()
