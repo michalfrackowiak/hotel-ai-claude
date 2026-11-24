@@ -19,6 +19,8 @@ import threading
 import time
 
 from hotel_ai.accounts.permissions import BookingOwnershipPermission, IsOwnerOrReadOnly
+import datetime as _dt
+
 from hotel_ai.bookings.services import (
     availability_summary,
     calculate_total,
@@ -38,7 +40,7 @@ from hotel_ai.bookings.services import (
     apply_promo_code,
 )
 
-from .models import Booking, BookingLog, BookingStatus, Client, PromoCode, Room, RoomType
+from .models import Booking, BookingLog, BookingStatus, Client, PromoCode, RatePlan, Room, RoomType
 from .serializers import (
     AvailabilityRequestSerializer,
     AvailabilityResponseSerializer,
@@ -52,6 +54,7 @@ from .serializers import (
     PromoCodeApplySerializer,
     PromoCodeCheckSerializer,
     PromoCodeSerializer,
+    RatePlanSerializer,
     RoomSerializer,
     RoomTypeSerializer,
 )
@@ -253,6 +256,18 @@ class BookingCreateView(APIView):
             language=data["language"],
         )
 
+        # Resolve rate plan if provided
+        rate_plan = None
+        plan_slug = data.get("rate_plan", "").strip()
+        if plan_slug:
+            try:
+                rate_plan = RatePlan.objects.get(name__iexact=plan_slug)
+            except RatePlan.DoesNotExist:
+                return JsonResponse(
+                    {"detail": f"Unknown rate plan '{plan_slug}'"},
+                    status=400,
+                )
+
         try:
             booking = create_booking(
                 room=room,
@@ -262,6 +277,7 @@ class BookingCreateView(APIView):
                 guests=data["guests"],
                 source=data.get("source", "chat"),
                 notes=data.get("notes", ""),
+                rate_plan=rate_plan,
             )
         except (ValueError, IntegrityError) as exc:
             return JsonResponse({"detail": str(exc)}, status=409)
@@ -755,3 +771,64 @@ class CancellationEstimateView(APIView):
 
         result = estimate_cancellation_refund(booking)
         return JsonResponse(result)
+
+
+class RatePlanListView(APIView):
+    """GET /api/rate-plans/ — list all available rate plans."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        plans = list(RatePlan.objects.all())
+        return JsonResponse(
+            [RatePlanSerializer(plan).data for plan in plans], safe=False
+        )
+
+
+class RatePlansByRoomTypeView(APIView):
+    """GET /api/rate-plans/?room_type=<name>&check_in=YYYY-MM-DD — get applicable rate plans."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        room_type_name = request.GET.get("room_type")
+        check_in_str = request.GET.get("check_in", "")
+        nights_str = request.GET.get("nights", "1")
+
+        if not room_type_name:
+            return JsonResponse({"detail": "room_type parameter required"}, status=400)
+
+        try:
+            rt = RoomType.objects.get(name=room_type_name)
+        except RoomType.DoesNotExist:
+            return JsonResponse({"detail": "Unknown room type"}, status=404)
+
+        check_in = parse_date(check_in_str) if check_in_str else None
+        try:
+            nights = max(1, int(nights_str or 1))
+        except (ValueError, TypeError):
+            nights = 1
+
+        results = []
+        for plan in RatePlan.objects.all():
+            calc_check_in = check_in or _dt.date.today()
+            calc_check_out = calc_check_in + _dt.timedelta(days=nights)
+            base = calculate_total(
+                rt, calc_check_in, calc_check_out, rate_plan=plan
+            )
+
+            results.append({
+                "id": plan.id,
+                "name": plan.name,
+                "description": plan.description,
+                "plan_type": plan.plan_type,
+                "is_non_refundable": plan.is_non_refundable,
+                "includes_breakfast": plan.includes_breakfast,
+                "corporate_discount_pct": plan.corporate_discount_pct,
+                "stay_x_pay_nights": plan.stay_x_pay_nights,
+                "total_price": str(base),
+                "currency": "PLN",
+                "per_night": str(round(base / nights, 2)) if nights > 0 else "0.00",
+            })
+
+        return JsonResponse(results, safe=False)

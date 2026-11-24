@@ -24,6 +24,7 @@ from .models import (
     CancellationPolicy,
     Client,
     PricingRule,
+    RatePlan,
     Room,
     RoomType,
 )
@@ -76,15 +77,38 @@ def calculate_total(
     room_type: RoomType,
     check_in: _dt.date,
     check_out: _dt.date,
+    rate_plan: Optional[RatePlan] = None,
 ) -> Decimal:
-    """Sum the effective nightly price across the stay."""
+    """Sum the effective nightly price across the stay, applying rate plan discounts.
+
+    Supported rate plan modifiers:
+    - ``stay_x_pay_nights``: guest pays only N nights; remaining are free.
+    - ``corporate_discount_pct``: percentage off the total.
+    - ``is_non_refundable`` / ``includes_breakfast``: handled at policy/email level.
+    """
     nights = (check_out - check_in).days
     if nights <= 0:
         return Decimal("0.00")
-    return sum(
+
+    base = sum(
         effective_price(room_type, check_in + _dt.timedelta(days=i))
         for i in range(nights)
     )
+
+    # Apply stay-X-pay-Y: guest pays for only N nights
+    if rate_plan is not None and rate_plan.stay_x_pay_nights is not None:
+        pay_nights = min(rate_plan.stay_x_pay_nights, nights)
+        base = sum(
+            effective_price(room_type, check_in + _dt.timedelta(days=i))
+            for i in range(pay_nights)
+        )
+
+    # Apply corporate discount percentage
+    if rate_plan is not None and rate_plan.corporate_discount_pct is not None:
+        discount = base * (rate_plan.corporate_discount_pct / Decimal("100"))
+        base = base - discount
+
+    return max(base, Decimal("0.00"))
 
 
 def overlapping_bookings(room: Room, check_in: _dt.date, check_out: _dt.date):
@@ -161,6 +185,7 @@ def create_booking(
     guests: int = 1,
     source: str = "chat",
     notes: str = "",
+    rate_plan: Optional[RatePlan] = None,
 ) -> Booking:
     """Create a confirmed booking, enforcing every invariant."""
     if check_out <= check_in:
@@ -173,12 +198,15 @@ def create_booking(
         raise ValueError("Room is not available for the requested dates.")
 
     rule = resolve_pricing_rule(room.room_type, check_in)
-    total = calculate_total(room.room_type, check_in, check_out)
+    total = calculate_total(
+        room.room_type, check_in, check_out, rate_plan=rate_plan
+    )
 
     booking = Booking.objects.create(
         room=room,
         client=client,
         pricing_rule=rule,
+        rate_plan=rate_plan,
         check_in=check_in,
         check_out=check_out,
         guests=guests,

@@ -18,6 +18,8 @@ from .views import (
     ClientListCreateView,
     CancellationEstimateView,
     PricingView,
+    RatePlanListView,
+    RatePlansByRoomTypeView,
     RoomListView,
     RoomTypeListView,
     booking_admin,
@@ -54,4 +56,6 @@ urlpatterns = [
     path("feed/", booking_calendar_feed, name="calendar-feed"),
     path("bookings/<int:pk>/activity/", BookingActivityView.as_view(), name="booking-activity"),
     path("availability/stream/", AvailabilityStreamView.as_view(), name="availability-stream"),
+    path("rate-plans/", RatePlanListView.as_view(), name="rate-plans-list"),
+    path("rate-plans/by-room-type/", RatePlansByRoomTypeView.as_view(), name="rate-plans-by-room-type"),
 ]

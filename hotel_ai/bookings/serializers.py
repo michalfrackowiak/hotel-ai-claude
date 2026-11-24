@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from .models import Booking, BookingLog, BookingStatus, Client, PricingRule, Room, RoomType, PromoCode
+from .models import Booking, BookingLog, BookingStatus, Client, PricingRule, Room, RoomType, PromoCode, RatePlan
 from .services import (
     calculate_total,
     effective_price,
@@ -83,6 +83,7 @@ class BookingSerializer(serializers.ModelSerializer):
     room_number = serializers.CharField(source="room.room_number", read_only=True)
     room_type_name = serializers.CharField(source="room.room_type.name", read_only=True)
     nights = serializers.IntegerField(read_only=True)
+    rate_plan_name = serializers.CharField(source="rate_plan.name", read_only=True, allow_null=True)
 
     class Meta:
         model = Booking
@@ -94,6 +95,8 @@ class BookingSerializer(serializers.ModelSerializer):
             "client",
             "client_name",
             "pricing_rule",
+            "rate_plan",
+            "rate_plan_name",
             "check_in",
             "check_out",
             "guests",
@@ -164,6 +167,7 @@ class BookingRequestSerializer(serializers.Serializer):
     )
     notes = serializers.CharField(required=False, allow_blank=True, default="")
     source = serializers.CharField(required=False, allow_blank=True, default="chat")
+    rate_plan = serializers.CharField(required=False, allow_blank=True, default="")
 
     def validate(self, attrs):
         if attrs["check_out"] <= attrs["check_in"]:
@@ -242,6 +246,21 @@ class BookingModifySerializer(serializers.Serializer):
         return attrs
 
 
+class RatePlanSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RatePlan
+        fields = (
+            "id",
+            "name",
+            "plan_type",
+            "description",
+            "is_non_refundable",
+            "includes_breakfast",
+            "corporate_discount_pct",
+            "stay_x_pay_nights",
+        )
+
+
 __all__ = [
     "RoomTypeSerializer",
     "RoomSerializer",
@@ -258,4 +277,5 @@ __all__ = [
     "PricingRequestSerializer",
     "BookingRequestSerializer",
     "BookingResponseSerializer",
+    "RatePlanSerializer",
 ]

@@ -120,6 +120,56 @@ class BookingStatus(models.TextChoices):
     CHECKED_OUT = "checked_out", "Checked-out"
 
 
+class RatePlan(models.Model):
+    """A rate plan / package that modifies booking pricing and policies.
+
+    Plans can feature: non-refundable terms, breakfast inclusion,
+    corporate discount %, or "stay X pay Y" specials.
+    """
+
+    class PlanType(models.TextChoices):
+        STANDARD = "standard", "Standard"
+        NON_REFUNDABLE = "non_refundable", "Non-refundable"
+        BREAKFAST_INCLUDED = "breakfast_included", "Breakfast Included"
+        CORPORATE_DISCOUNT = "corporate_discount", "Corporate Discount"
+        STAY_X_PAY_Y = "stay_x_pay_y", "Stay X Pay Y"
+
+    name = models.CharField(max_length=64, unique=True)
+    plan_type = models.CharField(max_length=32, choices=PlanType.choices)
+    description = models.TextField(blank=True, default="", help_text="Human-readable label for guests.")
+    # Non-refundable: if true, the booking inherits the cancellation policy's
+    # non_refundable_days (or a plan-specific override).
+    is_non_refundable = models.BooleanField(
+        default=False,
+        help_text="Cancel within non_refundable_days = no refund.",
+    )
+    # Breakfast: if true, breakfast is included in the stay.
+    includes_breakfast = models.BooleanField(
+        default=False,
+        help_text="Breakfast included for all guests.",
+    )
+    # Corporate discount: percentage off the total (0-100).
+    corporate_discount_pct = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="Percentage discount (e.g., 15 for 15% off).",
+    )
+    # Stay X Pay Y: number of paid nights. Null = standard (all nights paid).
+    stay_x_pay_nights = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="Number of nights the guest pays for (remaining are free).",
+    )
+
+    class Meta:
+        verbose_name = "rate plan"
+        verbose_name_plural = "rate plans"
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class Booking(models.Model):
     """A reservation against a concrete room for a client."""
 
@@ -142,6 +192,14 @@ class Booking(models.Model):
         blank=True,
         related_name="bookings",
         help_text="Rule active at the moment of booking.",
+    )
+    rate_plan = models.ForeignKey(
+        RatePlan,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="bookings",
+        help_text="Rate plan / package active for this booking.",
     )
     check_in = models.DateField()
     check_out = models.DateField()

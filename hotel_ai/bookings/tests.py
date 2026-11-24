@@ -2672,3 +2672,237 @@ def test_email_templates_render_with_correct_currency_formatting(double, client_
     assert isinstance(ctx["total_price"], Decimal)
     assert ctx["nights"] == 2
     assert ctx["guests"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Rate plans / packages
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+def test_create_rate_plan():
+    """Rate plan model creates and persists correctly."""
+    from hotel_ai.bookings.models import RatePlan
+
+    plan = RatePlan.objects.create(
+        name="Breakfast Included",
+        plan_type=RatePlan.PlanType.BREAKFAST_INCLUDED,
+        description="Complimentary breakfast for all guests.",
+        includes_breakfast=True,
+    )
+    assert plan.name == "Breakfast Included"
+    assert plan.includes_breakfast is True
+    assert plan.is_non_refundable is False
+    assert str(plan) == "Breakfast Included"
+
+
+@pytest.mark.django_db
+def test_rate_plan_types_exist():
+    """All rate plan type choices are present."""
+    from hotel_ai.bookings.models import RatePlan
+
+    expected = {"standard", "non_refundable", "breakfast_included",
+                "corporate_discount", "stay_x_pay_y"}
+    actual = {v[0] for v in RatePlan.PlanType.choices}
+    assert expected == actual
+
+
+@pytest.mark.django_db
+def test_calculate_total_with_corporate_discount(double, client_fixture):
+    """Corporate discount reduces the total by the specified percentage."""
+    from decimal import Decimal
+    from hotel_ai.bookings.models import RatePlan
+    from hotel_ai.bookings.services import create_booking
+
+    _, room = double
+    base_per_night = room.room_type.base_price_per_night  # e.g., 320 PLN
+    nights = 2
+
+    plan = RatePlan.objects.create(
+        name="Corporate Discount 15%",
+        plan_type=RatePlan.PlanType.CORPORATE_DISCOUNT,
+        corporate_discount_pct=15,
+    )
+
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 11, 1),
+        check_out=_dt.date(2026, 11, 3),
+        rate_plan=plan,
+    )
+
+    expected = base_per_night * Decimal(str(nights))
+    discount = expected * Decimal("0.15")
+    assert booking.total_price == round(expected - discount, 2)
+    assert booking.rate_plan == plan
+
+
+@pytest.mark.django_db
+def test_calculate_total_with_stay_x_pay_y(double, client_fixture):
+    """Stay X pay Y: guest pays for fewer nights than they stay."""
+    from decimal import Decimal
+    from hotel_ai.bookings.models import RatePlan
+    from hotel_ai.bookings.services import create_booking
+
+    _, room = double
+    base_per_night = room.room_type.base_price_per_night  # 320 PLN
+
+    plan = RatePlan.objects.create(
+        name="Stay 3 Pay 2",
+        plan_type=RatePlan.PlanType.STAY_X_PAY_Y,
+        stay_x_pay_nights=2,
+    )
+
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 11, 1),
+        check_out=_dt.date(2026, 11, 4),  # 3 nights
+        rate_plan=plan,
+    )
+
+    # Should pay for only 2 nights, not 3
+    expected = base_per_night * Decimal("2")
+    assert booking.total_price == expected
+    assert booking.nights == 3  # still 3 nights of stay
+    assert booking.rate_plan == plan
+
+
+@pytest.mark.django_db
+def test_rate_plan_not_affecting_capacity_check(double, client_fixture):
+    """Rate plan doesn't affect capacity validation."""
+    from hotel_ai.bookings.models import RatePlan, BookingStatus
+    from hotel_ai.bookings.services import create_booking
+
+    _, room = double
+    # Room capacity is 2
+    plan = RatePlan.objects.create(
+        name="Corporate Discount",
+        plan_type=RatePlan.PlanType.CORPORATE_DISCOUNT,
+        corporate_discount_pct=10,
+    )
+
+    with pytest.raises(ValueError):
+        create_booking(
+            room=room,
+            client=client_fixture,
+            check_in=_dt.date(2026, 12, 1),
+            check_out=_dt.date(2026, 12, 2),
+            guests=5,  # exceeds capacity
+            rate_plan=plan,
+        )
+
+
+@pytest.mark.django_db
+def test_api_book_with_rate_plan(client, double, client_fixture):
+    """POST /api/bookings/create/ with rate_plan parameter works."""
+    from hotel_ai.bookings.models import RatePlan
+
+    _, room = double
+    plan = RatePlan.objects.create(
+        name="Corporate Discount 15%",
+        plan_type=RatePlan.PlanType.CORPORATE_DISCOUNT,
+        corporate_discount_pct=15,
+    )
+
+    response = client.post(
+        "/api/bookings/create/",
+        {
+            "room_type": "Double",
+            "check_in": "2026-12-15",
+            "check_out": "2026-12-17",
+            "guests": 1,
+            "first_name": "Jan",
+            "last_name": "Kowalski",
+            "email": "jan@example.com",
+            "rate_plan": "Corporate Discount 15%",
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 201, response.json()
+    data = response.json()
+    assert data["booking"]["rate_plan"] is not None
+    assert data["booking"]["rate_plan_name"] == "Corporate Discount 15%"
+
+
+@pytest.mark.django_db
+def test_api_rate_plans_list_endpoint(client):
+    """GET /api/rate-plans/ returns list of rate plans."""
+    from hotel_ai.bookings.models import RatePlan
+
+    RatePlan.objects.create(
+        name="Standard Rate",
+        plan_type=RatePlan.PlanType.STANDARD,
+    )
+    RatePlan.objects.create(
+        name="Non-Refundable Best Rate",
+        plan_type=RatePlan.PlanType.NON_REFUNDABLE,
+        is_non_refundable=True,
+    )
+
+    response = client.get("/api/rate-plans/")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 2
+    names = {item["name"] for item in data}
+    assert names == {"Standard Rate", "Non-Refundable Best Rate"}
+
+
+@pytest.mark.django_db
+def test_api_rate_plans_by_room_type_requires_room_type(client):
+    """GET /api/rate-plans/by-room-type/ without room_type returns 400."""
+    response = client.get("/api/rate-plans/by-room-type/")
+    assert response.status_code == 400
+    detail = response.json()["detail"].lower()
+    assert "room_type" in detail
+
+
+@pytest.mark.django_db
+def test_api_rate_plans_by_room_type_returns_prices(client, double):
+    """GET /api/rate-plans/by-room-type/ returns prices per plan."""
+    from hotel_ai.bookings.models import RatePlan
+
+    plan = RatePlan.objects.create(
+        name="Non-Refundable Best Rate",
+        plan_type=RatePlan.PlanType.NON_REFUNDABLE,
+        is_non_refundable=True,
+    )
+
+    response = client.get(
+        "/api/rate-plans/by-room-type/?room_type=Double&check_in=2026-12-15&nights=2"
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    assert len(data) >= 1
+    # Find our plan in results
+    matching = [p for p in data if p["name"] == "Non-Refundable Best Rate"]
+    assert len(matching) == 1
+    assert matching[0]["is_non_refundable"] is True
+    assert "total_price" in matching[0]
+    assert "per_night" in matching[0]
+
+
+@pytest.mark.django_db
+def test_rate_plan_serializer_fields(double):
+    """RatePlanSerializer exposes all relevant fields."""
+    from hotel_ai.bookings.serializers import RatePlanSerializer
+    from hotel_ai.bookings.models import RatePlan
+
+    plan = RatePlan.objects.create(
+        name="Test Plan",
+        plan_type=RatePlan.PlanType.BREAKFAST_INCLUDED,
+        description="Test description",
+        includes_breakfast=True,
+        corporate_discount_pct=10,
+        stay_x_pay_nights=2,
+    )
+
+    serializer = RatePlanSerializer(plan)
+    data = serializer.data
+    assert data["name"] == "Test Plan"
+    assert data["plan_type"] == "breakfast_included"
+    assert data["includes_breakfast"] is True
+    assert data["corporate_discount_pct"] == 10
+    assert data["stay_x_pay_nights"] == 2

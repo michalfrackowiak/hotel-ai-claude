@@ -17,6 +17,7 @@ from hotel_ai.bookings.models import (
     Client,
     PricingRule,
     PromoCode,
+    RatePlan,
     Room,
     RoomType,
 )
@@ -45,6 +46,8 @@ class Command(BaseCommand):
         self._seed_demo_booking(room_types)
         self.stdout.write("Seeding promo codes...")
         self._seed_promo_codes()
+        self.stdout.write("Seeding rate plans...")
+        self._seed_rate_plans()
         self.stdout.write("Ensuring superuser...")
         self._ensure_superuser()
         self.stdout.write(self.style.SUCCESS("Seed data complete."))
@@ -203,6 +206,52 @@ class Command(BaseCommand):
                 "active": True,
             },
         )
+
+    def _seed_rate_plans(self):
+        """Seed demo rate plans (idempotent)."""
+        specs = [
+            {
+                "name": "Standard Rate",
+                "plan_type": RatePlan.PlanType.STANDARD,
+                "description": "Our standard rate with flexible cancellation.",
+            },
+            {
+                "name": "Non-Refundable Best Rate",
+                "plan_type": RatePlan.PlanType.NON_REFUNDABLE,
+                "description": "Best price guaranteed — non-refundable and non-changeable.",
+                "is_non_refundable": True,
+            },
+            {
+                "name": "Breakfast Included",
+                "plan_type": RatePlan.PlanType.BREAKFAST_INCLUDED,
+                "description": "Enjoy complimentary breakfast each morning of your stay.",
+                "includes_breakfast": True,
+            },
+            {
+                "name": "Corporate Discount 15%",
+                "plan_type": RatePlan.PlanType.CORPORATE_DISCOUNT,
+                "description": "Exclusive rate for corporate partners — 15% off.",
+                "corporate_discount_pct": 15,
+            },
+            {
+                "name": "Stay 3 Pay 2",
+                "plan_type": RatePlan.PlanType.STAY_X_PAY_Y,
+                "description": "Book 3 nights or more and pay only for 2.",
+                "stay_x_pay_nights": 2,
+            },
+        ]
+        for spec in specs:
+            RatePlan.objects.update_or_create(
+                name=spec["name"],
+                defaults={
+                    "plan_type": spec["plan_type"],
+                    "description": spec["description"],
+                    "is_non_refundable": spec.get("is_non_refundable", False),
+                    "includes_breakfast": spec.get("includes_breakfast", False),
+                    "corporate_discount_pct": spec.get("corporate_discount_pct"),
+                    "stay_x_pay_nights": spec.get("stay_x_pay_nights"),
+                },
+            )
 
     def _ensure_superuser(self):
         User = get_user_model()
