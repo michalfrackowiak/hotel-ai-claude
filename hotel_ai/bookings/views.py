@@ -6,7 +6,7 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
-from django.http import HttpResponseBadRequest, JsonResponse, StreamingHttpResponse
+from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse, StreamingHttpResponse
 from django.shortcuts import render
 from rest_framework import status
 import json as _json
@@ -39,6 +39,7 @@ from hotel_ai.bookings.services import (
     validate_promo_code,
     apply_promo_code,
 )
+from hotel_ai.bookings.invoices import generate_invoice_pdf
 
 from .models import Booking, BookingLog, BookingStatus, Client, PromoCode, RatePlan, Room, RoomType
 from .serializers import (
@@ -914,3 +915,26 @@ class BookingPreArrivalView(APIView):
             "booking": BookingSerializer(booking).data,
             "message": f"ID document uploaded: {safe_name}",
         })
+
+
+class BookingInvoiceView(APIView):
+    """GET /api/bookings/<id>/invoice/ — download the booking invoice as PDF."""
+
+    permission_classes = [BookingOwnershipPermission]
+
+    def get(self, request, pk):
+        try:
+            booking = Booking.objects.select_related(
+                "room", "room__room_type", "client", "rate_plan"
+            ).get(pk=pk)
+        except Booking.DoesNotExist:
+            return JsonResponse({"detail": "Booking not found"}, status=404)
+
+        pdf_bytes = generate_invoice_pdf(booking)
+        if not pdf_bytes:
+            return JsonResponse({"detail": "Invoice generation unavailable"}, status=501)
+
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="invoice_{pk}.pdf"'
+        return response
+

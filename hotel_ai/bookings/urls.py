@@ -16,6 +16,7 @@ from .views import (
     BookingNoShowView,
     BookingPreArrivalView,
     BookingRetrieveUpdateView,
+    BookingInvoiceView,
     ClientListCreateView,
     CancellationEstimateView,
     PricingView,
@@ -60,4 +61,5 @@ urlpatterns = [
     path("rate-plans/", RatePlanListView.as_view(), name="rate-plans-list"),
     path("rate-plans/by-room-type/", RatePlansByRoomTypeView.as_view(), name="rate-plans-by-room-type"),
     path("bookings/<int:pk>/pre-arrival/", BookingPreArrivalView.as_view(), name="booking-pre-arrival"),
+    path("bookings/<int:pk>/invoice/", BookingInvoiceView.as_view(), name="booking-invoice"),
 ]

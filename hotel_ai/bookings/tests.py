@@ -13,7 +13,16 @@ import pytest
 from django.test import override_settings
 from django.utils import timezone
 
-from hotel_ai.bookings.models import Booking, BookingLog, BookingStatus, Client, PricingRule, Room, RoomType
+from hotel_ai.bookings.models import (
+    Booking,
+    BookingLog,
+    BookingStatus,
+    Client,
+    PricingRule,
+    RatePlan,
+    Room,
+    RoomType,
+)
 from hotel_ai.bookings.services import (
     availability_summary,
     calculate_total,
@@ -2963,3 +2972,63 @@ def test_pre_arrival_requires_existing_booking(client):
         content_type="application/json",
     )
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Invoice / receipt PDF download
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+def test_invoice_download_returns_pdf(client, double, client_fixture):
+    """GET /api/bookings/<id>/invoice/ returns a PDF with correct content-type."""
+    _, room = double
+    plan = RatePlan.objects.create(
+        name="Breakfast Included",
+        plan_type=RatePlan.PlanType.BREAKFAST_INCLUDED,
+        includes_breakfast=True,
+    )
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 12, 1),
+        check_out=_dt.date(2026, 12, 4),
+        rate_plan=plan,
+    )
+
+    response = client.get(f"/api/bookings/{booking.id}/invoice/")
+    assert response.status_code == 200, response.content
+    assert response["Content-Type"] == "application/pdf"
+    assert response["Content-Disposition"].startswith('attachment; filename="invoice_')
+    assert len(response.content) > 0
+    assert response.content.startswith(b"%PDF")
+
+
+@pytest.mark.django_db
+def test_invoice_download_requires_existing_booking(client):
+    """Invoice returns 404 for a non-existent booking id."""
+    response = client.get("/api/bookings/99999/invoice/")
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_invoice_includes_rate_plan(client, double, client_fixture):
+    """Invoice PDF includes rate plan info for bookings that have one."""
+    _, room = double
+    plan = RatePlan.objects.create(
+        name="Non-Refundable Best Rate",
+        plan_type=RatePlan.PlanType.NON_REFUNDABLE,
+        is_non_refundable=True,
+    )
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 12, 1),
+        check_out=_dt.date(2026, 12, 2),
+        rate_plan=plan,
+    )
+
+    response = client.get(f"/api/bookings/{booking.id}/invoice/")
+    assert response.status_code == 200
+    assert response["Content-Type"] == "application/pdf"
+    assert len(response.content) > 0
+    assert response.content.startswith(b"%PDF")

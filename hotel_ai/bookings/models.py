@@ -231,6 +231,12 @@ class Booking(models.Model):
         default="",
         help_text="Stored filename of uploaded ID document.",
     )
+    promo_codes = models.ManyToManyField(
+        "PromoCode",
+        blank=True,
+        related_name="bookings",
+        help_text="Promo codes applied to this booking.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
