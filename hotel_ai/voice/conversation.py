@@ -8,14 +8,17 @@ State lives in a :class:`Conversation` row keyed by ``session_key``.
 from __future__ import annotations
 
 import base64
+import json
 import logging
-from typing import Optional
+from typing import Callable, Optional
 
 from hotel_ai.ai_providers.agent import ReservationAgent
 from hotel_ai.ai_providers.factory import get_speech_provider
 from hotel_ai.ai_providers.models import Conversation
 
 logger = logging.getLogger(__name__)
+
+OnTokenCallback = Callable[[str], None]
 
 
 class VoiceConversation:
@@ -57,6 +60,37 @@ class VoiceConversation:
             return {"error": "no_transcript", "text": "", "audio_b64": "", "audio_mime": ""}
 
         result = self.agent.handle_message(self.conversation, transcript)
+        reply = result.text or ""
+        audio_out = self.speak(reply) if reply else b""
+        return {
+            "transcript": transcript,
+            "text": reply,
+            "audio_b64": base64.b64encode(audio_out).decode() if audio_out else "",
+            "audio_mime": "audio/mpeg" if audio_out else "",
+            "action": result.action,
+            "booking_id": result.booking_id,
+            "error": result.error,
+        }
+
+    def stream_turn(
+        self, audio_b64: str, on_token: OnTokenCallback | None = None
+    ) -> dict:
+        """Stream one voice turn: audio -> text -> agent -> audio.
+
+        Yields text tokens via *on_token* as they are generated so the
+        frontend can show a preview before synthesis finishes. Returns the
+        same dict shape as :meth:`turn` after completion.
+        """
+        try:
+            audio = base64.b64decode(audio_b64)
+        except Exception as exc:  # pragma: no cover - defensive
+            return {"error": f"Invalid audio: {exc}", "text": "", "audio_b64": "", "audio_mime": ""}
+
+        transcript = self.transcribe(audio)
+        if not transcript:
+            return {"error": "no_transcript", "text": "", "audio_b64": "", "audio_mime": ""}
+
+        result = self.agent.handle_streaming(self.conversation, transcript, on_token=on_token)
         reply = result.text or ""
         audio_out = self.speak(reply) if reply else b""
         return {
