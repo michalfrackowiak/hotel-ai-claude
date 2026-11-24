@@ -633,6 +633,7 @@
     const waveform = document.getElementById('waveform');
     const speakingContainer = document.getElementById('speakingContainer');
     const API = '{% url "voice:voice-turn" %}';
+    const STREAM_API = '{% url "voice:voice-stream-turn" %}';
     const LANG = '{{ language }}';
 
     const T = {
@@ -898,6 +899,9 @@
       }
     }
 
+    // Abort controller for barge-in (interrupting agent response)
+    let currentFetchAbort = null;
+
     async function playAudio(b64, mime) {
       const audio = new Audio('data:' + (mime || 'audio/mpeg') + ';base64,' + b64);
       return new Promise((resolve) => {
@@ -914,6 +918,181 @@
       });
     }
 
+    // Streaming version using SSE + Fetch + ReadableStream
+    async function streamCall() {
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        chunks = [];
+        mediaRecorder = new MediaRecorder(micStream, { mimeType: 'audio/webm' });
+        setupVoiceActivity();
+        isCalling = true;
+        isSpeaking = false;
+
+        mediaRecorder.ondataavailable = e => {
+          if (e.data.size > 0) chunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+          cancelAnimationFrame(animFrameId);
+
+          if (chunks.length === 0) {
+            setStatus(T.noRecord, 'error');
+            showMicIdle();
+            startRecording();
+            return;
+          }
+
+          const blob = new Blob(chunks, { type: 'audio/webm' });
+          const b64 = await toBase64(blob);
+          setStatus(T.processing, 'processing');
+          showMicIdle();
+
+          try {
+            const sessionKey = window.__session || (window.__session = Math.random().toString(36).slice(2));
+            window.__session = sessionKey;
+            sessionInfoEl.textContent = sessionKey.slice(0, 12) + '...';
+
+            // Use Fetch + ReadableStream for SSE
+            const res = await fetch(STREAM_API, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                session_key: sessionKey,
+                audio_b64: b64,
+                mime: 'audio/webm',
+                language: LANG
+              }),
+            });
+
+            if (!res.body) {
+              throw new Error('No response body');
+            }
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let fullReply = '';
+            let audioChunks = [];
+            let gotResult = false;
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop(); // keep incomplete line
+
+              for (const line of lines) {
+                if (!line.trim()) continue;
+                if (line.startsWith('event: ')) {
+                  const eventName = line.slice(7).trim();
+                  // Next line should be 'data: ...'
+                } else if (line.startsWith('data: ')) {
+                  const data = line.slice(6).trim();
+                  if (data === '') continue;
+
+                  // Handle different event types
+                  if (eventName === 'token') {
+                    fullReply += data;
+                    // Update transcript in real-time
+                    if (fullReply.length > 0) {
+                      // Show as we receive tokens
+                    }
+                  } else if (eventName === 'transcript') {
+                    appendTranscript('guest', data);
+                  } else if (eventName === 'result') {
+                    try {
+                      const result = JSON.parse(data);
+                      gotResult = true;
+                      if (result.session_key) {
+                        window.__session = result.session_key;
+                        sessionInfoEl.textContent = result.session_key.slice(0, 12) + '...';
+                      }
+                      if (result.error) {
+                        appendTranscript('agent', T.errPrefix + result.error);
+                        setStatus(T.errPrefix + result.error, 'error');
+                      } else {
+                        if (result.booking_id && result.action === 'book') {
+                          // We'll fetch full details later
+                        }
+                        if (result.action === 'book' && result.booking_id) {
+                          // Fetch full booking details
+                          fetch(`/api/bookings/${result.booking_id}/`)
+                            .then(r => r.json())
+                            .then(b => populateBannerFromData({
+                              booking_id: result.booking_id,
+                              room_number: b.room_number,
+                              check_in: b.check_in,
+                              check_out: b.check_out,
+                              nights: b.nights,
+                              guests: b.guests,
+                              total_price: b.total_price,
+                              client_name: b.client_name,
+                            }))
+                            .catch(() => populateBannerFromData(result));
+                        }
+                      }
+                    } catch (e) {
+                      // ignore parse errors
+                    }
+                  } else if (eventName === 'audio') {
+                    audioChunks.push(data);
+                  } else if (eventName === 'audio_end') {
+                    // Audio chunks complete - play the concatenated audio
+                    if (audioChunks.length > 0) {
+                      const fullAudio = audioChunks.join('');
+                      showAgentSpeakingUI();
+                      appendTranscript('agent', fullReply || '...');
+                      await playAudio(fullAudio, 'audio/mpeg');
+                      hideAgentSpeakingUI();
+                    }
+                  }
+                }
+              }
+            }
+
+            // If we never got result event, handle final state
+            if (!gotResult) {
+              setStatus(isCalling ? T.listening : T.ended, isCalling ? 'listening' : 'ready');
+            }
+
+            if (isCalling) startRecording();
+          } catch (err) {
+            if (err.name === 'AbortError') {
+              // Barge-in: user clicked Stop, silently ignore
+              return;
+            }
+            setStatus(T.error, 'error');
+            showMicIdle();
+            if (isCalling) startRecording();
+          }
+        };
+
+        startRecording();
+        callBtn.disabled = true;
+        stopBtn.disabled = false;
+        transcriptEl.textContent = '';
+        showListeningUI();
+        visualizeVoice();
+        setStatus(T.listening, 'listening');
+      } catch (err) {
+        setStatus(T.micError + ' ' + err.message, 'error');
+        showMicIdle();
+      }
+    }
+
+    // Barge-in: stop current agent response
+    function bargeIn() {
+      if (currentFetchAbort) {
+        currentFetchAbort.abort();
+        currentFetchAbort = null;
+      }
+      // Also stop any playing audio
+      hideAgentSpeakingUI();
+      showMicIdle();
+    }
+
     function toBase64(blob) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -925,7 +1104,16 @@
 
     callBtn.addEventListener('click', startCall);
 
+    // Track if agent is currently speaking for barge-in
+    let agentIsSpeaking = false;
+
     stopBtn.addEventListener('click', () => {
+      if (agentIsSpeaking) {
+        // Barge-in: interrupt agent but keep call active
+        bargeIn();
+        return;
+      }
+      // Normal call end
       isCalling = false;
       isSpeaking = false;
       cancelAnimationFrame(animFrameId);
@@ -935,6 +1123,19 @@
       showMicIdle();
       setStatus('<span>⏹️ </span>' + T.ended, 'ready');
     });
+
+    // Override showAgentSpeakingUI to track speaking state
+    const origShowAgentSpeakingUI = showAgentSpeakingUI;
+    showAgentSpeakingUI = function() {
+      agentIsSpeaking = true;
+      return origShowAgentSpeakingUI();
+    };
+
+    const origHideAgentSpeakingUI = hideAgentSpeakingUI;
+    hideAgentSpeakingUI = function() {
+      agentIsSpeaking = false;
+      return origHideAgentSpeakingUI();
+    };
 
     // Cleanup on page unload
     window.addEventListener('beforeunload', () => {

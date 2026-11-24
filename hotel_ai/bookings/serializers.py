@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from .models import Booking, BookingLog, BookingStatus, Client, PricingRule, Room, RoomType
+from .models import Booking, BookingLog, BookingStatus, Client, PricingRule, Room, RoomType, PromoCode
 from .services import (
     calculate_total,
     effective_price,
@@ -11,6 +11,8 @@ from .services import (
     parse_date,
     resolve_client,
     resolve_pricing_rule,
+    validate_promo_code,
+    apply_promo_code,
 )
 
 
@@ -181,6 +183,54 @@ class BookingLogSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "booking", "created_at")
 
 
+class PromoCodeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PromoCode
+        fields = (
+            "id",
+            "code",
+            "discount_type",
+            "discount_value",
+            "valid_from",
+            "valid_to",
+            "max_uses",
+            "current_uses",
+            "active",
+            "created_at",
+        )
+        read_only_fields = ("id", "current_uses", "created_at")
+
+
+class PromoCodeCheckSerializer(serializers.Serializer):
+    code = serializers.CharField()
+    check_in = serializers.DateField()
+
+    def validate(self, attrs):
+        try:
+            promo = validate_promo_code(attrs["code"], attrs["check_in"])
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc))
+        attrs["promo_code"] = promo
+        return attrs
+
+
+class PromoCodeApplySerializer(serializers.Serializer):
+    booking_id = serializers.IntegerField()
+    code = serializers.CharField()
+
+    def validate(self, attrs):
+        try:
+            booking = Booking.objects.get(pk=attrs["booking_id"])
+        except Booking.DoesNotExist:
+            raise serializers.ValidationError("Booking not found")
+        try:
+            validate_promo_code(attrs["code"], booking.check_in)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc))
+        attrs["booking"] = booking
+        return attrs
+
+
 __all__ = [
     "RoomTypeSerializer",
     "RoomSerializer",
@@ -188,6 +238,9 @@ __all__ = [
     "PricingRuleSerializer",
     "BookingSerializer",
     "BookingLogSerializer",
+    "PromoCodeSerializer",
+    "PromoCodeCheckSerializer",
+    "PromoCodeApplySerializer",
     "AvailabilityRequestSerializer",
     "AvailabilityResponseSerializer",
     "PricingRequestSerializer",

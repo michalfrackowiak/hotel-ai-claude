@@ -31,9 +31,11 @@ from hotel_ai.bookings.services import (
     no_show_booking,
     parse_date,
     resolve_client,
+    validate_promo_code,
+    apply_promo_code,
 )
 
-from .models import Booking, BookingLog, BookingStatus, Client, Room, RoomType
+from .models import Booking, BookingLog, BookingStatus, Client, PromoCode, Room, RoomType
 from .serializers import (
     AvailabilityRequestSerializer,
     AvailabilityResponseSerializer,
@@ -43,6 +45,9 @@ from .serializers import (
     BookingSerializer,
     ClientSerializer,
     PricingRequestSerializer,
+    PromoCodeApplySerializer,
+    PromoCodeCheckSerializer,
+    PromoCodeSerializer,
     RoomSerializer,
     RoomTypeSerializer,
 )
@@ -635,3 +640,56 @@ def booking_confirm(request):
     """Booking confirmation page."""
     language = request.GET.get("lang", "en")
     return render(request, "bookings/confirm.html", {"language": language})
+
+
+class PromoCodeCheckView(APIView):
+    """GET /api/promo-codes/<code>/check/?check_in=YYYY-MM-DD — validate a promo code."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request, code):
+        check_in_str = request.GET.get("check_in")
+        if not check_in_str:
+            return JsonResponse({"detail": "check_in parameter required (YYYY-MM-DD)"}, status=400)
+        try:
+            check_in = parse_date(check_in_str)
+        except ValueError as exc:
+            return JsonResponse({"detail": str(exc)}, status=400)
+        try:
+            promo = validate_promo_code(code, check_in)
+        except ValueError as exc:
+            return JsonResponse({"valid": False, "detail": str(exc)}, status=400)
+        return JsonResponse({
+            "valid": True,
+            "code": promo.code,
+            "discount_type": promo.discount_type,
+            "discount_value": str(promo.discount_value),
+            "valid_from": promo.valid_from.isoformat(),
+            "valid_to": promo.valid_to.isoformat(),
+        })
+
+
+class PromoCodeApplyView(APIView):
+    """POST /api/bookings/<id>/apply-promo/ — apply a promo code to a booking."""
+
+    permission_classes = [BookingOwnershipPermission]
+
+    def post(self, request, pk):
+        try:
+            booking = Booking.objects.select_related("room", "room__room_type", "client").get(pk=pk)
+        except Booking.DoesNotExist:
+            return JsonResponse({"detail": "Booking not found"}, status=404)
+
+        code = request.data.get("code", "").strip()
+        if not code:
+            return JsonResponse({"detail": "Promo code required"}, status=400)
+
+        try:
+            booking = apply_promo_code(booking, code)
+        except ValueError as exc:
+            return JsonResponse({"detail": str(exc)}, status=400)
+
+        return JsonResponse({
+            "booking": BookingSerializer(booking).data,
+            "message": f"Promo code applied. New total: {booking.total_price} {booking.currency}.",
+        })

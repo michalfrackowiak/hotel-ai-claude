@@ -22,6 +22,8 @@ from .views import (
     booking_export,
     booking_calendar_feed,
     RoomBulkUpdateView,
+    PromoCodeApplyView,
+    PromoCodeCheckView,
 )
 
 app_name = "bookings"
@@ -39,6 +41,8 @@ urlpatterns = [
     path("bookings/<int:pk>/check-in/", BookingCheckInView.as_view(), name="booking-check-in"),
     path("bookings/<int:pk>/check-out/", BookingCheckoutView.as_view(), name="booking-check-out"),
     path("bookings/<int:pk>/no-show/", BookingNoShowView.as_view(), name="booking-no-show"),
+    path("bookings/<int:pk>/apply-promo/", PromoCodeApplyView.as_view(), name="booking-apply-promo"),
+    path("promo-codes/<str:code>/check/", PromoCodeCheckView.as_view(), name="promo-code-check"),
     path("availability/", AvailabilityView.as_view(), name="availability"),
     path("pricing/", PricingView.as_view(), name="pricing"),
     path("admin/", booking_admin, name="booking-admin"),

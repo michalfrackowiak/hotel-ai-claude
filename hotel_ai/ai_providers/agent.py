@@ -456,4 +456,31 @@ class ReservationAgent:
         return data
 
 
+# ------------------------------------------------------------------
+    def handle_streaming(
+        self,
+        conversation: Conversation,
+        user_message: str,
+        on_token: Optional[callable] = None,
+        max_tool_rounds: int = 4,
+    ) -> AgentTurnResult:
+        """Process one guest message end-to-end, calling *on_token* for each text chunk.
+
+        This is a thin wrapper around :meth:`handle_message` that simulates
+        streaming by yielding word-level tokens from the final reply. Once the
+        underlying provider supports true streaming, this method can be swapped
+        to yield tokens directly from the LLM.
+        """
+        # Run the full logic first
+        result = self.handle_message(conversation, user_message, max_tool_rounds)
+
+        # Then "stream" the result text word-by-word
+        if result.text and on_token is not None:
+            words = result.text.split()
+            for i, word in enumerate(words):
+                on_token(word + (" " if i < len(words) - 1 else ""))
+
+        return result
+
+
 __all__ = ["ReservationAgent", "AgentTurnResult"]

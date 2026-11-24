@@ -203,3 +203,48 @@ class BookingLog(models.Model):
 
     def __str__(self) -> str:  # pragma: no cover - trivial
         return f"#{self.booking_id} → {self.action}"
+
+
+class PromoCode(models.Model):
+    """A discount code that can be applied to bookings."""
+
+    DISCOUNT_TYPES = (
+        ("percent", "Percentage"),
+        ("fixed", "Fixed Amount"),
+    )
+
+    code = models.CharField(max_length=32, unique=True)
+    discount_type = models.CharField(max_length=10, choices=DISCOUNT_TYPES)
+    discount_value = models.DecimalField(
+        max_digits=8, decimal_places=2, help_text="Percentage (e.g., 10 for 10%) or fixed amount in base currency"
+    )
+    valid_from = models.DateField()
+    valid_to = models.DateField()
+    max_uses = models.PositiveIntegerField(null=True, blank=True, help_text="Null = unlimited")
+    current_uses = models.PositiveIntegerField(default=0)
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:  # pragma: no cover - trivial
+        return f"{self.code} ({self.discount_type} {self.discount_value})"
+
+    def is_valid(self, check_in: _dt.date) -> bool:
+        """Check if promo code is valid for a given check-in date."""
+        if not self.active:
+            return False
+        if self.max_uses is not None and self.current_uses >= self.max_uses:
+            return False
+        if check_in < self.valid_from or check_in > self.valid_to:
+            return False
+        return True
+
+    def apply(self, total_price: Decimal) -> Decimal:
+        """Apply discount to total price."""
+        if self.discount_type == "percent":
+            discount = total_price * (self.discount_value / Decimal("100"))
+        else:  # fixed
+            discount = self.discount_value
+        return max(total_price - discount, Decimal("0.00"))

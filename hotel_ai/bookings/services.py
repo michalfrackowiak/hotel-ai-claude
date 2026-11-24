@@ -273,6 +273,37 @@ def today() -> _dt.date:
     return timezone.now().date()
 
 
+def validate_promo_code(code: str, check_in: _dt.date) -> PromoCode:
+    """Validate and return a promo code if valid for the given check-in date."""
+    from .models import PromoCode
+
+    try:
+        promo = PromoCode.objects.get(code__iexact=code)
+    except PromoCode.DoesNotExist:
+        raise ValueError("Invalid promo code")
+
+    if not promo.is_valid(check_in):
+        raise ValueError("Promo code is not valid for the selected dates")
+
+    return promo
+
+
+def apply_promo_code(booking: Booking, code: str) -> Booking:
+    """Apply a promo code to a booking, updating its total price."""
+    promo = validate_promo_code(code, booking.check_in)
+    new_total = promo.apply(booking.total_price)
+    booking.total_price = new_total
+    booking.save(update_fields=["total_price"])
+    promo.current_uses += 1
+    promo.save(update_fields=["current_uses"])
+    BookingLog.objects.create(
+        booking=booking,
+        action="promo_applied",
+        notes=f"Applied promo {promo.code}: {booking.total_price} {booking.currency}"
+    )
+    return booking
+
+
 __all__ = [
     "resolve_client",
     "resolve_pricing_rule",
@@ -288,4 +319,6 @@ __all__ = [
     "no_show_booking",
     "parse_date",
     "today",
+    "validate_promo_code",
+    "apply_promo_code",
 ]
