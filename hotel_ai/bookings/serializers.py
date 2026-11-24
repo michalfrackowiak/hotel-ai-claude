@@ -105,8 +105,12 @@ class BookingSerializer(serializers.ModelSerializer):
             "currency",
             "source",
             "notes",
+            "estimated_arrival",
+            "special_requests",
+            "id_document_filename",
             "nights",
             "created_at",
+            "updated_at",
         )
         read_only_fields = (
             "id",
@@ -261,6 +265,28 @@ class RatePlanSerializer(serializers.ModelSerializer):
         )
 
 
+class PreArrivalSerializer(serializers.Serializer):
+    """Validate pre-arrival form submission data."""
+
+    estimated_arrival = serializers.TimeField(required=False, allow_null=True)
+    special_requests = serializers.CharField(
+        required=False, allow_blank=True, default=""
+    )
+
+    def validate_estimated_arrival(self, value):
+        if value is not None:
+            parts = str(value).split(":")
+            try:
+                h, m = int(parts[0]), int(parts[1])
+                if not (0 <= h <= 23 and 0 <= m <= 59):
+                    raise serializers.ValidationError(
+                        "Estimated arrival must be a valid time."
+                    )
+            except (ValueError, IndexError):
+                raise serializers.ValidationError("Invalid time format.")
+        return value
+
+
 __all__ = [
     "RoomTypeSerializer",
     "RoomSerializer",
@@ -272,6 +298,7 @@ __all__ = [
     "PromoCodeCheckSerializer",
     "PromoCodeApplySerializer",
     "BookingModifySerializer",
+    "PreArrivalSerializer",
     "AvailabilityRequestSerializer",
     "AvailabilityResponseSerializer",
     "PricingRequestSerializer",

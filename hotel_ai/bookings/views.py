@@ -51,6 +51,7 @@ from .serializers import (
     BookingSerializer,
     ClientSerializer,
     PricingRequestSerializer,
+    PreArrivalSerializer,
     PromoCodeApplySerializer,
     PromoCodeCheckSerializer,
     PromoCodeSerializer,
@@ -832,3 +833,84 @@ class RatePlansByRoomTypeView(APIView):
             })
 
         return JsonResponse(results, safe=False)
+
+
+class BookingPreArrivalView(APIView):
+    """PATCH /api/bookings/<id>/pre-arrival/ — update pre-arrival info.
+
+    Accepts estimated_arrival (time) and special_requests (text).
+    Does NOT handle file upload; the filename is recorded separately via
+    a POST with multipart/form-data if needed.
+    """
+
+    permission_classes = [BookingOwnershipPermission]
+
+    def patch(self, request, pk):
+        try:
+            booking = Booking.objects.get(pk=pk)
+        except Booking.DoesNotExist:
+            return JsonResponse({"detail": "Booking not found"}, status=404)
+
+        serializer = PreArrivalSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        data = serializer.validated_data
+        changes = []
+        if "estimated_arrival" in data:
+            booking.estimated_arrival = data["estimated_arrival"]
+            changes.append("estimated_arrival")
+        if "special_requests" in data:
+            booking.special_requests = data["special_requests"]
+            changes.append("special_requests")
+        if changes:
+            booking.save(update_fields=changes + ["updated_at"])
+            BookingLog.objects.create(
+                booking=booking,
+                action="pre_arrival_updated",
+                notes=f"Updated fields: {', '.join(changes)}",
+            )
+
+        return JsonResponse({
+            "booking": BookingSerializer(booking).data,
+            "message": f"Pre-arrival info updated.",
+        })
+
+    def post(self, request, pk):
+        """Handle ID document upload."""
+        try:
+            booking = Booking.objects.get(pk=pk)
+        except Booking.DoesNotExist:
+            return JsonResponse({"detail": "Booking not found"}, status=404)
+
+        id_file = request.FILES.get("id_document")
+        if not id_file:
+            return JsonResponse({"detail": "id_document file required"}, status=400)
+
+        # Save to MEDIA_ROOT/identity_documents/
+        import os
+        from django.conf import settings
+        from django.utils.text import get_valid_filename
+
+        upload_dir = os.path.join(settings.MEDIA_ROOT, "identity_documents")
+        os.makedirs(upload_dir, exist_ok=True)
+
+        ext = os.path.splitext(id_file.name)[1] or ".bin"
+        safe_name = f"{pk}_{get_valid_filename(id_file.name)}{ext}"
+        path = os.path.join(upload_dir, safe_name)
+
+        with open(path, "wb+") as dest:
+            for chunk in id_file.chunks():
+                dest.write(chunk)
+
+        booking.id_document_filename = safe_name
+        booking.save(update_fields=["id_document_filename", "updated_at"])
+        BookingLog.objects.create(
+            booking=booking,
+            action="id_uploaded",
+            notes=f"Uploaded ID document: {safe_name}",
+        )
+
+        return JsonResponse({
+            "booking": BookingSerializer(booking).data,
+            "message": f"ID document uploaded: {safe_name}",
+        })

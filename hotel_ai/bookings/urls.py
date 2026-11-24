@@ -14,6 +14,7 @@ from .views import (
     BookingLookupView,
     BookingModifyView,
     BookingNoShowView,
+    BookingPreArrivalView,
     BookingRetrieveUpdateView,
     ClientListCreateView,
     CancellationEstimateView,
@@ -58,4 +59,5 @@ urlpatterns = [
     path("availability/stream/", AvailabilityStreamView.as_view(), name="availability-stream"),
     path("rate-plans/", RatePlanListView.as_view(), name="rate-plans-list"),
     path("rate-plans/by-room-type/", RatePlansByRoomTypeView.as_view(), name="rate-plans-by-room-type"),
+    path("bookings/<int:pk>/pre-arrival/", BookingPreArrivalView.as_view(), name="booking-pre-arrival"),
 ]

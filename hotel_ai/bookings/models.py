@@ -215,6 +215,22 @@ class Booking(models.Model):
         max_length=16, default="chat", help_text="chat | voice | web | admin"
     )
     notes = models.TextField(blank=True, default="")
+    estimated_arrival = models.TimeField(
+        null=True,
+        blank=True,
+        help_text="Guest's estimated arrival time.",
+    )
+    special_requests = models.TextField(
+        blank=True,
+        default="",
+        help_text="Special guest requests (e.g., high floor, extra pillow).",
+    )
+    id_document_filename = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Stored filename of uploaded ID document.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

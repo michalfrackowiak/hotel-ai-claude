@@ -2906,3 +2906,60 @@ def test_rate_plan_serializer_fields(double):
     assert data["includes_breakfast"] is True
     assert data["corporate_discount_pct"] == 10
     assert data["stay_x_pay_nights"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Pre-arrival form
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+def test_pre_arrival_update_estimated_arrival(client, double, client_fixture):
+    """PATCH /api/bookings/<id>/pre-arrival/ updates estimated arrival."""
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 12, 1),
+        check_out=_dt.date(2026, 12, 3),
+    )
+
+    response = client.patch(
+        f"/api/bookings/{booking.id}/pre-arrival/",
+        {"estimated_arrival": "18:30", "special_requests": "Late check-in"},
+        content_type="application/json",
+    )
+    assert response.status_code == 200, response.json()
+    data = response.json()
+    assert data["booking"]["estimated_arrival"] is not None
+    assert "18:30" in data["booking"]["estimated_arrival"]
+    assert data["booking"]["special_requests"] == "Late check-in"
+
+
+@pytest.mark.django_db
+def test_pre_arrival_rejects_invalid_time(client, double, client_fixture):
+    """Pre-arrival rejects times with invalid hour or minute values."""
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 12, 1),
+        check_out=_dt.date(2026, 12, 2),
+    )
+
+    response = client.patch(
+        f"/api/bookings/{booking.id}/pre-arrival/",
+        {"estimated_arrival": "25:99"},
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_pre_arrival_requires_existing_booking(client):
+    """Pre-arrival returns 404 for a non-existent booking id."""
+    response = client.patch(
+        "/api/bookings/99999/pre-arrival/",
+        {"special_requests": "Extra pillow"},
+        content_type="application/json",
+    )
+    assert response.status_code == 404
