@@ -231,6 +231,17 @@ class PromoCodeApplySerializer(serializers.Serializer):
         return attrs
 
 
+class BookingModifySerializer(serializers.Serializer):
+    check_in = serializers.DateField()
+    check_out = serializers.DateField()
+    guests = serializers.IntegerField(min_value=1, required=False, default=None)
+
+    def validate(self, attrs):
+        if attrs["check_out"] <= attrs["check_in"]:
+            raise serializers.ValidationError("check_out must be after check_in.")
+        return attrs
+
+
 __all__ = [
     "RoomTypeSerializer",
     "RoomSerializer",
@@ -241,6 +252,7 @@ __all__ = [
     "PromoCodeSerializer",
     "PromoCodeCheckSerializer",
     "PromoCodeApplySerializer",
+    "BookingModifySerializer",
     "AvailabilityRequestSerializer",
     "AvailabilityResponseSerializer",
     "PricingRequestSerializer",

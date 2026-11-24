@@ -1,0 +1,12 @@
+Dear {{ client.first_name }},
+
+Your reservation has been confirmed.
+
+Room: {{ room.room_number }} — {{ room.room_type.name }}
+Check-in: {{ check_in }}
+Check-out: {{ check_out }}
+Nights: {{ nights }}
+Guests: {{ guests }}
+Total: {{ total_price }} {{ currency }}
+
+We look forward to welcoming you!

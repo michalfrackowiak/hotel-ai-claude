@@ -1,0 +1,1 @@
+Check-in complete — {{ room.room_number }} is ready!

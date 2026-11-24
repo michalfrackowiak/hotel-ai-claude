@@ -1,0 +1,23 @@
+{% extends "bookings/email/base.html" %}
+{% load i18n %}
+
+{% block content %}
+<h2>{% trans "Your Booking is Confirmed!" %}</h2>
+<p>{% blocktrans with first_name=client.first_name %}Dear {{ first_name }},{% endblocktrans %}</p>
+<p>{% trans "We're delighted to confirm your reservation." %}</p>
+
+<table class="details-table">
+    <tr><td>{% trans "Check-in" %}</td><td>{{ check_in|date:"M j, Y" }}</td></tr>
+    <tr><td>{% trans "Check-out" %}</td><td>{{ check_out|date:"M j, Y" }}</td></tr>
+    <tr><td>{% trans "Nights" %}</td><td>{{ nights }}</td></tr>
+    <tr><td>{% trans "Guests" %}</td><td>{{ guests }}</td></tr>
+    <tr><td>{% trans "Room" %}</td><td>{{ room.room_number }} — {{ room.room_type.name }}</td></tr>
+    <tr><td>{% trans "Total" %}</td><td>{{ total_price }} {{ currency }}</td></tr>
+</table>
+
+{% if notes %}
+<p>{% trans "Special notes:" %} {{ notes }}</p>
+{% endif %}
+
+<a href="{{ booking_link }}" class="cta">{% trans "Manage Your Booking" %}</a>
+{% endblock %}

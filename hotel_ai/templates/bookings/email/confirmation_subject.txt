@@ -1,0 +1,2 @@
+Booking confirmed, {{ client.first_name }}!
+{% include "bookings/email/confirmation_plain.txt" %}

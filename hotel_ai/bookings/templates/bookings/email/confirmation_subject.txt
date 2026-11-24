@@ -1,0 +1,1 @@
+Booking confirmed, {{ client.first_name }}!

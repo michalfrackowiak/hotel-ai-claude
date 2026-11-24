@@ -205,6 +205,39 @@ class BookingLog(models.Model):
         return f"#{self.booking_id} → {self.action}"
 
 
+class CancellationPolicy(models.Model):
+    """Cancellation rules governing how much of a booking's total is refunded.
+
+    The logic uses two thresholds measured in days before check-in:
+    - ``free_cancellation_days`` — cancel this many days or more = full refund
+    - ``non_refundable_days``   — cancel fewer than this many days = no refund
+    Between these two windows, a partial refund percentage applies.
+    """
+
+    name = models.CharField(max_length=64, unique=True)
+    description = models.TextField(blank=True, default="", help_text="Human-readable label for guests.")
+    free_cancellation_days = models.PositiveIntegerField(
+        default=0,
+        help_text="Cancel N days or more before check-in = full refund.",
+    )
+    partial_refund_pct = models.PositiveSmallIntegerField(
+        default=100,
+        help_text="Refund % within the penalty window (default 100 = still full).",
+    )
+    non_refundable_days = models.PositiveIntegerField(
+        default=0,
+        help_text="Fewer than this many days = no refund.",
+    )
+
+    class Meta:
+        verbose_name = "cancellation policy"
+        verbose_name_plural = "cancellation policies"
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class PromoCode(models.Model):
     """A discount code that can be applied to bookings."""
 

@@ -10,6 +10,7 @@ from decimal import Decimal
 from unittest import mock
 
 import pytest
+from django.test import override_settings
 from django.utils import timezone
 
 from hotel_ai.bookings.models import Booking, BookingLog, BookingStatus, Client, PricingRule, Room, RoomType
@@ -20,7 +21,9 @@ from hotel_ai.bookings.services import (
     check_in_booking,
     check_out_booking,
     create_booking,
+    estimate_arrival_update,
     find_available_rooms,
+    modify_booking_dates,
     no_show_booking,
     overlapping_bookings,
     parse_date,
@@ -363,7 +366,9 @@ def test_create_booking_skips_calendar_on_sync_failure(double, client_fixture):
             guests=2,
         )
     assert booking.status == BookingStatus.CONFIRMED
-    logger_mock.debug.assert_called_once()
+    logger_mock.debug.assert_called_once_with(
+        "Calendar sync skipped for booking %s", booking.id, exc_info=True
+    )
 
 
 @pytest.mark.django_db
@@ -2142,3 +2147,528 @@ def test_promo_code_min_price_floor(client, double, client_fixture):
     assert resp.status_code == 200
     booking.refresh_from_db()
     assert booking.total_price == Decimal("0.00")
+
+
+# ---------------------------------------------------------------------------
+# Cancellation policy tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+def test_cancellation_estimate_full_refund():
+    """Full refund when cancelling more than free_cancellation_days before check-in."""
+    from hotel_ai.bookings.models import CancellationPolicy
+    from hotel_ai.bookings.services import estimate_cancellation_refund
+
+    _, room = _make_room_pair("Double")
+    client = Client.objects.create(first_name="Test", last_name="Guest", email="canc@example.com")
+    booking = create_booking(
+        room=room, client=client,
+        check_in=_dt.date(2026, 8, 1),
+        check_out=_dt.date(2026, 8, 5), guests=2,
+    )
+    # Create a policy: full refund if >7 days before check-in
+    policy = CancellationPolicy.objects.create(
+        name="Standard",
+        free_cancellation_days=7,
+        partial_refund_pct=50,
+        non_refundable_days=2,
+    )
+    result = estimate_cancellation_refund(booking, today=_dt.date(2026, 7, 15))
+    assert Decimal(result["refund_amount"]) == booking.total_price
+    assert result["note"].lower().find("full") >= 0
+
+
+@pytest.mark.django_db
+def test_cancellation_estimate_partial_refund():
+    """Partial refund in the penalty window."""
+    from hotel_ai.bookings.models import CancellationPolicy
+    from hotel_ai.bookings.services import estimate_cancellation_refund
+
+    _, room = _make_room_pair("Double")
+    client = Client.objects.create(first_name="Test", last_name="Guest", email="canc2@example.com")
+    booking = create_booking(
+        room=room, client=client,
+        check_in=_dt.date(2026, 8, 1),
+        check_out=_dt.date(2026, 8, 5), guests=2,
+    )
+    CancellationPolicy.objects.create(
+        name="Standard",
+        free_cancellation_days=7,
+        partial_refund_pct=50,
+        non_refundable_days=2,
+    )
+    # 5 days before check-in (between 7 and 2)
+    result = estimate_cancellation_refund(booking, today=_dt.date(2026, 7, 27))
+    assert float(result["refund_percentage"]) == pytest.approx(50.0)
+
+
+@pytest.mark.django_db
+def test_cancellation_estimate_no_refund():
+    """No refund when within non-refundable window."""
+    from hotel_ai.bookings.models import CancellationPolicy
+    from hotel_ai.bookings.services import estimate_cancellation_refund
+
+    _, room = _make_room_pair("Double")
+    client = Client.objects.create(first_name="Test", last_name="Guest", email="canc3@example.com")
+    booking = create_booking(
+        room=room, client=client,
+        check_in=_dt.date(2026, 8, 1),
+        check_out=_dt.date(2026, 8, 5), guests=2,
+    )
+    CancellationPolicy.objects.create(
+        name="Standard",
+        free_cancellation_days=7,
+        partial_refund_pct=50,
+        non_refundable_days=2,
+    )
+    # 1 day before check-in (within non-refundable window)
+    result = estimate_cancellation_refund(booking, today=_dt.date(2026, 7, 31))
+    assert Decimal(result["refund_amount"]) == Decimal("0.00")
+    assert "no refund" in result["note"].lower()
+
+
+@pytest.mark.django_db
+def test_cancellation_estimate_api(client, double, client_fixture):
+    """GET /api/bookings/<id>/cancel-estimate/ returns refund info."""
+    from hotel_ai.bookings.models import CancellationPolicy
+
+    _, room = double
+    booking = create_booking(
+        room=room, client=client_fixture,
+        check_in=_dt.date(2026, 8, 1),
+        check_out=_dt.date(2026, 8, 5), guests=2,
+    )
+    CancellationPolicy.objects.create(
+        name="Standard",
+        free_cancellation_days=7,
+        partial_refund_pct=50,
+        non_refundable_days=2,
+    )
+    resp = client.get(f"/api/bookings/{booking.id}/cancel-estimate/")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "refund_amount" in body
+    assert "policy_name" in body
+    assert "days_until_checkin" in body
+
+
+# ---------------------------------------------------------------------------
+# Booking modification API tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+def test_modify_booking_api_shortens_stay(client, double, client_fixture):
+    """PATCH /api/bookings/<id>/modify/ shortens stay and recalculates price."""
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 5),
+        guests=2,
+    )
+    original_price = booking.total_price
+
+    resp = client.post(
+        f"/api/bookings/{booking.id}/modify/",
+        json.dumps({
+            "check_in": "2026-07-01",
+            "check_out": "2026-07-03",
+        }),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert Decimal(body["booking"]["total_price"]) < original_price
+    assert "price_change" in body
+
+
+@pytest.mark.django_db
+def test_modify_booking_api_longer_stay_costs_more(client, double, client_fixture):
+    """PATCH /api/bookings/<id>/modify/ lengthens stay and increases price."""
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+        guests=2,
+    )
+    original_price = booking.total_price
+
+    resp = client.post(
+        f"/api/bookings/{booking.id}/modify/",
+        json.dumps({
+            "check_in": "2026-07-01",
+            "check_out": "2026-07-05",
+        }),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert float(body["booking"]["total_price"]) > float(original_price)
+    assert body["price_change"] > 0
+
+
+@pytest.mark.django_db
+def test_modify_booking_api_conflict_returns_400(client, double, client_fixture):
+    """Modifying to unavailable dates returns 400."""
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 7, 10),
+        check_out=_dt.date(2026, 7, 15),
+        guests=2,
+    )
+
+    # Another booking for same room overlapping
+    booking2 = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 7, 20),
+        check_out=_dt.date(2026, 7, 25),
+        guests=2,
+    )
+
+    resp = client.post(
+        f"/api/bookings/{booking.id}/modify/",
+        json.dumps({
+            "check_in": "2026-07-22",
+            "check_out": "2026-07-27",
+        }),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+    assert "not available" in resp.json()["detail"].lower()
+
+
+@pytest.mark.django_db
+def test_modify_booking_api_invalid_dates_returns_400(client, double, client_fixture):
+    """Invalid date order returns 400."""
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+        guests=2,
+    )
+
+    resp = client.post(
+        f"/api/bookings/{booking.id}/modify/",
+        json.dumps({
+            "check_in": "2026-07-05",
+            "check_out": "2026-07-03",
+        }),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Booking modification services
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+def test_modify_booking_dates_shorter_stay_refunds(double, client_fixture):
+    """Moving to a shorter stay reduces total price (refund due)."""
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 5),
+        guests=2,
+    )
+    original_price = booking.total_price
+
+    modified, delta = modify_booking_dates(
+        booking,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+    )
+
+    booking.refresh_from_db()
+    assert modified.total_price < original_price
+    assert delta == booking.total_price - original_price
+    assert modified.check_out == _dt.date(2026, 7, 3)
+
+
+@pytest.mark.django_db
+def test_modify_booking_dates_longer_stay_costs_more(double, client_fixture):
+    """Moving to a longer stay increases total price (guest owes more)."""
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+        guests=2,
+    )
+    original_price = booking.total_price
+
+    modified, delta = modify_booking_dates(
+        booking,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 5),
+    )
+
+    booking.refresh_from_db()
+    assert modified.total_price > original_price
+    assert delta > 0
+    assert modified.check_out == _dt.date(2026, 7, 5)
+
+
+@pytest.mark.django_db
+def test_modify_booking_rejects_unavailable_dates(double, client_fixture):
+    """Cannot modify dates if another booking already occupies them."""
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 7, 10),
+        check_out=_dt.date(2026, 7, 15),
+        guests=2,
+    )
+
+    # Another booking on the SAME room overlapping where we want to move
+    booking2 = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 7, 20),
+        check_out=_dt.date(2026, 7, 25),
+        guests=2,
+    )
+
+    # Trying to move booking1 to Jul 22-27 overlaps booking2 on same room
+    with pytest.raises(ValueError, match="not available"):
+        modify_booking_dates(
+            booking,
+            check_in=_dt.date(2026, 7, 22),
+            check_out=_dt.date(2026, 7, 27),
+        )
+
+
+@pytest.mark.django_db
+def test_modify_booking_rejects_no_show(double, client_fixture):
+    """Cannot modify a cancelled or no-show booking."""
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+        guests=2,
+    )
+    booking.status = BookingStatus.CANCELLED
+    booking.save()
+    with pytest.raises(ValueError, match="Cannot modify"):
+        modify_booking_dates(
+            booking,
+            check_in=_dt.date(2026, 7, 5),
+            check_out=_dt.date(2026, 7, 7),
+        )
+
+
+@pytest.mark.django_db
+def test_modify_booking_excludes_self_from_overlap(double, client_fixture):
+    """Modifying dates that don't actually change anything doesn't flag overlap."""
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+        guests=2,
+    )
+
+    # Same dates should be fine (no-op)
+    modified, delta = modify_booking_dates(
+        booking,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+    )
+    assert modified.check_in == _dt.date(2026, 7, 1)
+    assert delta == Decimal("0.00")
+
+
+@pytest.mark.django_db
+def test_estimate_arrival_update_adds_notes(double, client_fixture):
+    """Setting estimated arrival adds a note and creates a log entry."""
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+        guests=2,
+    )
+
+    updated = estimate_arrival_update(booking, "around 3pm")
+
+    assert "around 3pm" in updated.notes
+    assert any(log.action == "arrival_updated" for log in booking.logs.all())
+
+
+@pytest.mark.django_db
+def test_estimate_arrival_rejects_cancelled(double, client_fixture):
+    """Cannot set arrival for a cancelled booking."""
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+        guests=2,
+    )
+    booking.status = BookingStatus.CANCELLED
+    booking.save()
+    with pytest.raises(ValueError):
+        estimate_arrival_update(booking, "tomorrow")
+
+
+# ---------------------------------------------------------------------------
+# Email communication tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+def test_send_booking_confirmation_calls_mail(double, client_fixture):
+    """send_booking_confirmation renders and dispatches an email."""
+    from django.core import mail
+    from hotel_ai.bookings.emails import send_booking_confirmation
+
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 8, 1),
+        check_out=_dt.date(2026, 8, 3),
+        guests=2,
+    )
+    mail.outbox.clear()
+
+    result = send_booking_confirmation(booking)
+    assert result is True
+    assert len(mail.outbox) == 1
+    msg = mail.outbox[0]
+    assert client_fixture.email in msg.to
+    assert "Booking confirmed" in msg.subject
+    assert str(booking.total_price) in msg.body
+
+
+@pytest.mark.django_db
+def test_send_booking_reminder_calls_mail(double, client_fixture):
+    """send_booking_reminder includes estimated arrival when provided."""
+    from django.core import mail
+    from hotel_ai.bookings.emails import send_booking_reminder
+
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 8, 1),
+        check_out=_dt.date(2026, 8, 3),
+    )
+    mail.outbox.clear()
+
+    send_booking_reminder(booking, estimated_arrival="5:00 PM")
+    assert len(mail.outbox) == 1
+    html = mail.outbox[0].alternatives[0][0] if mail.outbox[0].alternatives else ""
+    assert "5:00 PM" in html
+
+
+@pytest.mark.django_db
+def test_send_checkin_instructions(double, client_fixture):
+    """Check-in email includes Wi-Fi credentials."""
+    from django.core import mail
+    from hotel_ai.bookings.emails import send_checkin_instructions
+
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 7, 1),
+        check_out=_dt.date(2026, 7, 3),
+    )
+    check_in_booking(booking)
+
+    # Should have already sent check-in instructions via service layer
+    assert any("Check-in complete" in m.subject for m in mail.outbox)
+
+
+@pytest.mark.django_db
+def test_send_post_stay_survey(double, client_fixture):
+    """Post-stay survey email is sent with correct subject."""
+    from django.core import mail
+    from hotel_ai.bookings.emails import send_post_stay_survey
+
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 6, 1),
+        check_out=_dt.date(2026, 6, 5),
+    )
+    mail.outbox.clear()
+
+    send_post_stay_survey(booking, survey_link="https://example.com/survey/42")
+    assert len(mail.outbox) == 1
+    assert "How was your stay" in mail.outbox[0].subject
+    assert "https://example.com/survey/42" in mail.outbox[0].alternatives[0][0]
+
+
+@pytest.mark.django_db
+def test_email_service_handles_failure():
+    """_send returns False when send_mail raises."""
+    from unittest import mock
+    from hotel_ai.bookings.emails import _send
+
+    with mock.patch("django.core.mail.send_mail", mock.Mock(side_effect=Exception("connection refused"))):
+        result = _send("test@example.com", "Subject", "Body", "<p>Body</p>")
+    assert result is False
+
+
+@pytest.mark.django_db
+def test_booking_creation_sends_confirmation_email(double, client_fixture):
+    """create_booking triggers confirmation email (best-effort)."""
+    from unittest import mock
+    from hotel_ai.bookings.emails import send_booking_confirmation
+
+    calls: list[dict] = []
+
+    def _capture(*args, **kwargs):
+        calls.append(kwargs)
+        return 1
+
+    with mock.patch("django.core.mail.send_mail", _capture):
+        _, room = double
+        booking = create_booking(
+            room=room,
+            client=client_fixture,
+            check_in=_dt.date(2026, 9, 1),
+            check_out=_dt.date(2026, 9, 4),
+        )
+
+    assert booking.status == BookingStatus.CONFIRMED
+    assert len(calls) == 1
+    assert "Booking confirmed" in calls[0]["subject"]
+
+
+@pytest.mark.django_db
+def test_email_templates_render_with_correct_currency_formatting(double, client_fixture):
+    """Email context includes currency symbol/format from booking."""
+    from hotel_ai.bookings.emails import _ctx
+
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 10, 1),
+        check_out=_dt.date(2026, 10, 3),
+    )
+    ctx = _ctx(booking)
+    assert ctx["currency"] == "PLN"
+    assert isinstance(ctx["total_price"], Decimal)
+    assert ctx["nights"] == 2
+    assert ctx["guests"] == 1

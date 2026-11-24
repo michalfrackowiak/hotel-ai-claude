@@ -21,6 +21,7 @@ from .models import (
     Booking,
     BookingLog,
     BookingStatus,
+    CancellationPolicy,
     Client,
     PricingRule,
     Room,
@@ -198,6 +199,14 @@ def create_booking(
     except Exception:  # noqa: BLE001 - calendar sync must never block a booking
         logger.debug("Calendar sync skipped for booking %s", booking.id, exc_info=True)
 
+    # Best-effort confirmation email.
+    try:
+        from .emails import send_booking_confirmation
+        if booking.client.email:
+            send_booking_confirmation(booking)
+    except Exception:  # noqa: BLE001
+        logger.debug("Booking confirmation email failed for %s", booking.id, exc_info=True)
+
     return booking
 
 
@@ -208,6 +217,14 @@ def check_in_booking(booking: Booking) -> Booking:
     booking.status = BookingStatus.CHECKED_IN
     booking.save()
     BookingLog.objects.create(booking=booking, action="checked_in")
+
+    try:
+        from .emails import send_checkin_instructions
+        if booking.client.email:
+            send_checkin_instructions(booking)
+    except Exception:  # noqa: BLE001
+        logger.debug("Check-in email failed for booking %s", booking.id, exc_info=True)
+
     return booking
 
 
@@ -304,6 +321,142 @@ def apply_promo_code(booking: Booking, code: str) -> Booking:
     return booking
 
 
+def modify_booking_dates(
+    booking: Booking,
+    check_in: _dt.date,
+    check_out: _dt.date,
+    *,
+    guests: Optional[int] = None,
+) -> tuple[Booking, Decimal]:
+    """Modify a confirmed or checked-in booking's dates and/or guests.
+
+    Returns ``(booking, price_change)`` where ``price_change`` is the delta
+    (positive = guest owes more, negative = refund due).
+    """
+    if booking.status not in (BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN):
+        raise ValueError(f"Cannot modify booking with status '{booking.status}'")
+
+    if check_out <= check_in:
+        raise ValueError("check_out must be after check_in")
+
+    new_guests = guests if guests is not None else booking.guests
+
+    # Check capacity for the room type
+    if new_guests > booking.room.room_type.capacity:
+        raise ValueError(
+            f"Room capacity is {booking.room.room_type.capacity}; "
+            f"{new_guests} guests requested."
+        )
+
+    # Check availability: exclude this booking itself when checking overlaps
+    old_check_in = booking.check_in
+    old_check_out = booking.check_out
+    old_rooms = list(overlapping_bookings(booking.room, old_check_in, old_check_out))
+    old_rooms = [r for r in old_rooms if r.id != booking.id]
+
+    old_guests = booking.guests
+    new_overlaps = Booking.objects.filter(
+        room=booking.room,
+        check_in__lt=check_out,
+        check_out__gt=check_in,
+    ).exclude(id=booking.id).exclude(status=BookingStatus.CANCELLED)
+
+    if new_overlaps.exists():
+        raise ValueError("The requested dates are not available for this room.")
+
+    # Recalculate pricing
+    rule = resolve_pricing_rule(booking.room.room_type, check_in)
+    new_total = calculate_total(booking.room.room_type, check_in, check_out)
+    price_change = new_total - booking.total_price
+
+    booking.check_in = check_in
+    booking.check_out = check_out
+    if guests is not None:
+        booking.guests = new_guests
+    booking.pricing_rule = rule
+    booking.total_price = new_total
+    booking.save(update_fields=["check_in", "check_out", "guests", "pricing_rule", "total_price"])
+    BookingLog.objects.create(
+        booking=booking,
+        action="dates_modified",
+        notes=(
+            f"Dates changed from {old_check_in}→{old_check_out} to {check_in}→{check_out}"
+            + (f", guests {old_guests}→{new_guests}" if guests is not None else "")
+            + f", price change: {price_change:+.2f} {booking.currency}"
+        ),
+    )
+    return booking, price_change
+
+
+def estimate_arrival_update(booking: Booking, estimated_arrival: str) -> Booking:
+    """Update the estimated arrival time on a confirmed/checked-in booking."""
+    if booking.status not in (BookingStatus.CONFIRMED, BookingStatus.PENDING):
+        raise ValueError(f"Cannot update arrival for booking with status '{booking.status}'")
+    booking.notes = (booking.notes + "\nEstimated arrival: " + estimated_arrival).strip()
+    booking.save(update_fields=["notes"])
+    BookingLog.objects.create(
+        booking=booking,
+        action="arrival_updated",
+        notes=f"Estimated arrival set to {estimated_arrival}",
+    )
+    return booking
+
+
+def estimate_cancellation_refund(
+    booking: Booking,
+    *,
+    today: Optional[_dt.date] = None,
+) -> dict:
+    """Return refund information for cancelling a booking.
+
+    Uses the booking's pricing_rule or the default 'Standard' policy if none set.
+    Returns a dict with breakdown of refund calculation.
+    """
+    from django.utils import timezone as _tz
+
+    today = today or _tz.now().date()
+    days_until_checkin = (booking.check_in - today).days
+
+    # Get the applicable cancellation policy
+    policy = CancellationPolicy.objects.filter(name="Standard").first()
+    if policy is None:
+        policy = CancellationPolicy.objects.first()
+    if policy is None:
+        # Default liberal policy: full refund until check-in day
+        policy = CancellationPolicy(
+            name="Default",
+            free_cancellation_days=0,
+            partial_refund_pct=100,
+            non_refundable_days=0,
+        )
+
+    if days_until_checkin <= 0:
+        refund = Decimal("0.00")
+        note = "Check-in date has passed."
+    elif days_until_checkin >= policy.free_cancellation_days:
+        refund = booking.total_price
+        note = f"Full refund within free cancellation window ({policy.free_cancellation_days} days)."
+    elif days_until_checkin <= policy.non_refundable_days:
+        refund = Decimal("0.00")
+        note = f"No refund — cancelled less than {policy.non_refundable_days} days before check-in."
+    else:
+        refund = booking.total_price * Decimal(str(policy.partial_refund_pct)) / Decimal("100")
+        note = f"Partial refund at {policy.partial_refund_pct}% — between free and non-refundable windows."
+
+    refund = round(refund, 2)
+
+    return {
+        "booking_id": booking.id,
+        "total_price": str(booking.total_price),
+        "currency": booking.currency,
+        "days_until_checkin": days_until_checkin,
+        "policy_name": policy.name,
+        "refund_amount": str(refund),
+        "refund_percentage": float(refund / booking.total_price * 100) if booking.total_price > 0 else 0,
+        "note": note,
+    }
+
+
 __all__ = [
     "resolve_client",
     "resolve_pricing_rule",
@@ -321,4 +474,7 @@ __all__ = [
     "today",
     "validate_promo_code",
     "apply_promo_code",
+    "modify_booking_dates",
+    "estimate_arrival_update",
+    "estimate_cancellation_refund",
 ]

@@ -1,0 +1,23 @@
+{% extends "bookings/email/base.html" %}
+{% load i18n %}
+
+{% block content %}
+<h2>{% trans "Reminder: Your Stay Begins Tomorrow" %}</h2>
+<p>{% blocktrans with first_name=client.first_name %}Dear {{ first_name }},{% endblocktrans %}</p>
+<p>{% trans "This is a friendly reminder that your stay begins tomorrow." %}</p>
+
+<table class="details-table">
+    <tr><td>{% trans "Check-in date" %}</td><td>{{ check_in|date:"l, F j, Y" }}</td></tr>
+    <tr><td>{% trans "Room" %}</td><td>{{ room.room_number }} — {{ room.room_type.name }}</td></tr>
+    <tr><td>{% trans "Check-out" %}</td><td>{{ check_out|date:"F j, Y" }}</td></tr>
+    <tr><td>{% trans "Room type" %}</td><td>{{ room.room_type.description|default:"—" }}</td></tr>
+</table>
+
+<p>{% trans "Standard check-in time is 3:00 PM. If you expect to arrive after hours, please let us know in advance." %}</p>
+
+{% if estimated_arrival %}
+<p>{% trans "Your estimated arrival time: " %}<span class="highlight">{{ estimated_arrival }}</span></p>
+{% endif %}
+
+<a href="{{ booking_link }}" class="cta">{% trans "Manage Your Booking" %}</a>
+{% endblock %}

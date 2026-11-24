@@ -26,8 +26,11 @@ from hotel_ai.bookings.services import (
     check_in_booking,
     check_out_booking,
     create_booking,
+    estimate_arrival_update,
+    estimate_cancellation_refund,
     effective_price,
     find_available_rooms,
+    modify_booking_dates,
     no_show_booking,
     parse_date,
     resolve_client,
@@ -40,6 +43,7 @@ from .serializers import (
     AvailabilityRequestSerializer,
     AvailabilityResponseSerializer,
     BookingLogSerializer,
+    BookingModifySerializer,
     BookingRequestSerializer,
     BookingResponseSerializer,
     BookingSerializer,
@@ -693,3 +697,61 @@ class PromoCodeApplyView(APIView):
             "booking": BookingSerializer(booking).data,
             "message": f"Promo code applied. New total: {booking.total_price} {booking.currency}.",
         })
+
+
+class BookingModifyView(APIView):
+    """POST /api/bookings/<id>/modify/ — modify a booking's dates and/or guests.
+
+    Request body:
+    {
+        "check_in": "YYYY-MM-DD",
+        "check_out": "YYYY-MM-DD",
+        "guests": <optional integer>
+    }
+
+    Returns the modified booking with updated total_price and price_change delta.
+    """
+
+    permission_classes = [BookingOwnershipPermission]
+
+    def post(self, request, pk):
+        try:
+            booking = Booking.objects.select_related("room", "room__room_type", "client").get(pk=pk)
+        except Booking.DoesNotExist:
+            return JsonResponse({"detail": "Booking not found"}, status=404)
+
+        serializer = BookingModifySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            booking, price_change = modify_booking_dates(
+                booking=booking,
+                check_in=serializer.validated_data["check_in"],
+                check_out=serializer.validated_data["check_out"],
+                guests=serializer.validated_data.get("guests"),
+            )
+        except ValueError as exc:
+            return JsonResponse({"detail": str(exc)}, status=400)
+
+        return JsonResponse({
+            "booking": BookingSerializer(booking).data,
+            "message": f"Booking modified. Price change: {price_change:+.2f} {booking.currency}.",
+            "price_change": float(price_change),
+        })
+
+
+class CancellationEstimateView(APIView):
+    """GET /api/bookings/<id>/cancel-estimate/ — get refund info before cancelling."""
+
+    permission_classes = [BookingOwnershipPermission]
+
+    def get(self, request, pk):
+        try:
+            booking = Booking.objects.select_related("room", "room__room_type", "client").get(pk=pk)
+        except Booking.DoesNotExist:
+            return JsonResponse({"detail": "Booking not found"}, status=404)
+        if booking.status != BookingStatus.CONFIRMED:
+            return JsonResponse({"detail": f"Cannot cancel booking with status '{booking.status}'"}, status=400)
+
+        result = estimate_cancellation_refund(booking)
+        return JsonResponse(result)

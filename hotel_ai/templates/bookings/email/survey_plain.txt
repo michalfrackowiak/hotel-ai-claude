@@ -1,0 +1,10 @@
+How was your stay?
+
+Dear {{ client.first_name }},
+
+Thank you for staying with us!
+
+Stay dates: {{ check_in|date:"M j" }} – {{ check_out|date:"M j, Y" }}
+Room: {{ room.room_number }} — {{ room.room_type.name }}
+
+Would you like to leave a review?

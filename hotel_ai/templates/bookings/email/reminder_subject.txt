@@ -1,0 +1,11 @@
+Reminder: your stay starts tomorrow!
+
+Dear {{ client.first_name }},
+
+Your stay begins tomorrow.
+
+Check-in date: {{ check_in|date:"l, F j, Y" }}
+Room: {{ room.room_number }} — {{ room.room_type.name }}
+Check-out: {{ check_out|date:"F j, Y" }}
+
+Standard check-in time is 3:00 PM.

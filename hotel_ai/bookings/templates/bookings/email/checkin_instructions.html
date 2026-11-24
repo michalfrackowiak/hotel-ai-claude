@@ -1,0 +1,31 @@
+{% extends "bookings/email/base.html" %}
+{% load i18n %}
+
+{% block content %}
+<h2>{% trans "Welcome! Check-In Instructions" %}</h2>
+<p>{% blocktrans with first_name=client.first_name %}Dear {{ first_name }},{% endblocktrans %}</p>
+<p>{% trans "You have arrived at Grand Hotel AI. We're delighted to have you with us!" %}</p>
+
+<table class="details-table">
+    <tr><td>{% trans "Room number" %}</td><td class="highlight">{{ room.room_number }}</td></tr>
+    <tr><td>{% trans "Room type" %}</td><td>{{ room.room_type.name }}</td></tr>
+    <tr><td>{% trans "Check-out" %}</td><td>{{ check_out|date:"F j, Y" }}</td></tr>
+</table>
+
+<h3>{% trans "Wi-Fi" %}</h3>
+<p>{% blocktrans %}Network: <strong>{{ wifi_ssid }}</strong><br>Password: <strong>{{ wifi_password }}</strong>{% endblocktrans %}</p>
+
+<h3>{% trans "Amenities" %}</h3>
+<ul>
+    <li>{% trans "Breakfast is served from 7:00 AM to 10:00 AM in the dining area." %}</li>
+    <li>{% trans "Front desk is open 24/7 for any requests." %}</li>
+    <li>{% trans "Housekeeping will visit daily between 10:00 AM and 2:00 PM." %}</li>
+</ul>
+
+{% if notes %}
+<h3>{% trans "Special Notes" %}</h3>
+<p>{{ notes }}</p>
+{% endif %}
+
+<a href="{{ booking_link }}" class="cta">{% trans "View Booking Details" %}</a>
+{% endblock %}

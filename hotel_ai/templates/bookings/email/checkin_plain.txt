@@ -1,0 +1,17 @@
+Welcome! Check-in instructions inside
+
+Dear {{ client.first_name }},
+
+Welcome to Grand Hotel AI!
+
+Room number: {{ room.room_number }}
+Room type: {{ room.room_type.name }}
+Check-out: {{ check_out }}
+
+---
+
+Wi-Fi: {{ wifi_ssid }} / {{ wifi_password }}
+
+Breakfast: 7:00 AM - 10:00 AM
+Front desk: 24/7
+Housekeeping: 10:00 AM - 2:00 PM
