@@ -243,6 +243,14 @@ class Booking(models.Model):
         related_name="bookings",
         help_text="Promo codes applied to this booking.",
     )
+    group_booking = models.ForeignKey(
+        "GroupBooking",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="bookings",
+        help_text="Parent group booking if part of one.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -371,6 +379,33 @@ class LoyaltyPoint(models.Model):
     @property
     def absolute_points(self) -> int:
         return abs(self.points)
+
+
+class GroupBooking(models.Model):
+    """A group booking linking multiple rooms under one reservation for a client."""
+
+    client = models.ForeignKey(
+        Client, on_delete=models.CASCADE, related_name="group_bookings"
+    )
+    name = models.CharField(max_length=128, help_text="Human-readable group name.")
+    total_rooms = models.PositiveIntegerField(default=0, help_text="Number of rooms in the group.")
+    total_price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    currency = models.CharField(max_length=3, default="PLN")
+    notes = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"Group #{self.id}: {self.name} ({self.total_rooms} rooms)"
+
+    def update_totals(self):
+        """Recalculate total_rooms and total_price from associated bookings."""
+        self.total_rooms = self.bookings.count()
+        self.total_price = sum(b.total_price for b in self.bookings.all())
+        self.save(update_fields=["total_rooms", "total_price"])
 
 
 class CancellationPolicy(models.Model):

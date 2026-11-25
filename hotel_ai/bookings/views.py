@@ -29,10 +29,12 @@ from hotel_ai.bookings.services import (
     check_in_booking,
     check_out_booking,
     create_booking,
+    create_group_booking,
     estimate_arrival_update,
     estimate_cancellation_refund,
     effective_price,
     find_available_rooms,
+    get_group_bookings,
     modify_booking_dates,
     no_show_booking,
     parse_date,
@@ -42,7 +44,7 @@ from hotel_ai.bookings.services import (
 )
 from hotel_ai.bookings.invoices import generate_invoice_pdf
 
-from .models import Booking, BookingLog, BookingStatus, Client, LoyaltyPoint, Notification, PromoCode, RatePlan, Room, RoomType
+from .models import Booking, BookingLog, BookingStatus, Client, GroupBooking, LoyaltyPoint, Notification, PromoCode, RatePlan, Room, RoomType
 from .serializers import (
     AvailabilityRequestSerializer,
     AvailabilityResponseSerializer,
@@ -62,6 +64,8 @@ from .serializers import (
     RoomTypeSerializer,
     NotificationSerializer,
     LoyaltyPointSerializer,
+    GroupBookingSerializer,
+    GroupBookingCreateSerializer,
 )
 
 
@@ -1028,3 +1032,77 @@ class LoyaltyBalanceView(APIView):
             "history": history,
         })
 
+
+
+class GroupBookingCreateView(APIView):
+    """POST /api/group-bookings/ — create a group booking with multiple rooms."""
+
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = GroupBookingCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return JsonResponse(serializer.errors, status=400)
+
+        data = serializer.validated_data
+        try:
+            client = Client.objects.get(pk=data.get("client_id"))
+        except (Client.DoesNotExist, ValueError):
+            return JsonResponse({"detail": "Client not found"}, status=404)
+
+        room_ids = data["room_ids"]
+        rooms = list(Room.objects.filter(id__in=room_ids).select_related("room_type"))
+        if len(rooms) != len(room_ids):
+            missing = set(room_ids) - {r.id for r in rooms}
+            return JsonResponse({"detail": f"Rooms not found: {missing}"}, status=404)
+
+        try:
+            group, bookings = create_group_booking(
+                client=client,
+                name=data["name"],
+                rooms=rooms,
+                check_in=data["check_in"],
+                check_out=data["check_out"],
+                guests=data.get("guests", 1),
+                source=data.get("source", "chat"),
+                notes=data.get("notes", ""),
+            )
+        except ValueError as exc:
+            return JsonResponse({"detail": str(exc)}, status=400)
+
+        return JsonResponse({
+            "group": GroupBookingSerializer(group).data,
+            "bookings": [BookingSerializer(b).data for b in bookings],
+            "message": f"Group booking '{group.name}' created with {len(bookings)} rooms.",
+        }, status=201)
+
+
+class GroupBookingDetailView(APIView):
+    """GET /api/group-bookings/<pk>/ — get a group booking detail."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request, pk):
+        try:
+            group = GroupBooking.objects.select_related("client").prefetch_related("bookings").get(pk=pk)
+        except GroupBooking.DoesNotExist:
+            return JsonResponse({"detail": "Group booking not found"}, status=404)
+        return JsonResponse(GroupBookingSerializer(group).data)
+
+
+class GroupBookingListView(APIView):
+    """GET /api/group-bookings/?client=<id> — list group bookings for a client."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        client_id = request.GET.get("client")
+        if not client_id:
+            return JsonResponse({"detail": "client parameter required"}, status=400)
+        try:
+            client = Client.objects.get(pk=client_id)
+        except (Client.DoesNotExist, ValueError):
+            return JsonResponse({"detail": "Client not found"}, status=404)
+
+        groups = get_group_bookings(client)
+        return JsonResponse([GroupBookingSerializer(g).data for g in groups], safe=False)

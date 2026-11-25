@@ -17,6 +17,9 @@ from .views import (
     BookingPreArrivalView,
     BookingRetrieveUpdateView,
     BookingInvoiceView,
+    GroupBookingCreateView,
+    GroupBookingDetailView,
+    GroupBookingListView,
     LoyaltyBalanceView,
     NotificationListView,
     NotificationReadView,
@@ -68,4 +71,7 @@ urlpatterns = [
     path("notifications/", NotificationListView.as_view(), name="notifications-list"),
     path("notifications/<int:pk>/read/", NotificationReadView.as_view(), name="notification-read"),
     path("loyalty/balance/", LoyaltyBalanceView.as_view(), name="loyalty-balance"),
+    path("group-bookings/", GroupBookingListView.as_view(), name="group-bookings-list"),
+    path("group-bookings/create/", GroupBookingCreateView.as_view(), name="group-bookings-create"),
+    path("group-bookings/<int:pk>/", GroupBookingDetailView.as_view(), name="group-booking-detail"),
 ]

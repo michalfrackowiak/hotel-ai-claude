@@ -23,6 +23,7 @@ from .models import (
     BookingStatus,
     CancellationPolicy,
     Client,
+    GroupBooking,
     LoyaltyPoint,
     Notification,
     PricingRule,
@@ -545,6 +546,88 @@ def estimate_cancellation_refund(
     }
 
 
+
+
+def create_group_booking(
+    *,
+    client: Client,
+    name: str,
+    rooms: list,
+    check_in: _dt.date,
+    check_out: _dt.date,
+    guests: int = 1,
+    source: str = "chat",
+    notes: str = "",
+) -> tuple[GroupBooking, list]:
+    """Create a group booking with multiple rooms under one reservation.
+    
+    Returns (group_booking, created_bookings).
+    Raises ValueError if any room is not available.
+    """
+    if check_out <= check_in:
+        raise ValueError("check_out must be after check_in")
+    
+    # Validate all rooms are available first
+    for room in rooms:
+        if room.room_type.capacity < guests:
+            raise ValueError(
+                f"Room {room.room_number} capacity is {room.room_type.capacity}; {guests} requested."
+            )
+        if overlapping_bookings(room, check_in, check_out).exists():
+            raise ValueError(f"Room {room.room_number} is not available for the requested dates.")
+    
+    group = GroupBooking.objects.create(
+        client=client,
+        name=name,
+        total_rooms=len(rooms),
+        currency="PLN",
+        notes=notes,
+    )
+    
+    created = []
+    total_price = Decimal("0.00")
+    with transaction.atomic():
+        for room in rooms:
+            rule = resolve_pricing_rule(room.room_type, check_in)
+            price = calculate_total(room.room_type, check_in, check_out)
+            b = Booking.objects.create(
+                room=room,
+                client=client,
+                pricing_rule=rule,
+                check_in=check_in,
+                check_out=check_out,
+                guests=guests,
+                status=BookingStatus.CONFIRMED,
+                total_price=price,
+                currency="PLN",
+                source=source,
+                notes=notes,
+                group_booking=group,
+            )
+            BookingLog.objects.create(booking=b, action="created", notes=f"Part of group '{name}'")
+            total_price += price
+            created.append(b)
+        
+        group.total_price = total_price
+        group.save(update_fields=["total_price"])
+        
+        # Create notifications for each booking
+        for b in created:
+            try:
+                b.send_notification(
+                    Notification.Type.CONFIRMED,
+                    f"Your booking at room {b.room.room_number} as part of group '{name}' has been confirmed!",
+                )
+            except Exception:
+                logger.debug("Notification creation failed for group booking %s", b.id, exc_info=True)
+    
+    return group, created
+
+
+def get_group_bookings(client: Client) -> list:
+    """Return all group bookings for a client."""
+    return list(client.group_bookings.all())
+
 __all__ = [
     "resolve_client",
     "resolve_pricing_rule",
@@ -565,4 +648,6 @@ __all__ = [
     "modify_booking_dates",
     "estimate_arrival_update",
     "estimate_cancellation_refund",
+    "create_group_booking",
+    "get_group_bookings",
 ]

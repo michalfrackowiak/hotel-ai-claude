@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from .models import Booking, BookingLog, BookingStatus, Client, LoyaltyPoint, Notification, PricingRule, Room, RoomType, PromoCode, RatePlan
+from .models import Booking, BookingLog, BookingStatus, Client, GroupBooking, LoyaltyPoint, Notification, PricingRule, Room, RoomType, PromoCode, RatePlan
 from .services import (
     calculate_total,
     effective_price,
@@ -301,6 +301,31 @@ class LoyaltyPointSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "created_at")
 
 
+class GroupBookingSerializer(serializers.ModelSerializer):
+    bookings = BookingSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = GroupBooking
+        fields = ("id", "client", "name", "total_rooms", "total_price", "currency", "notes", "bookings", "created_at", "updated_at")
+        read_only_fields = ("id", "created_at", "updated_at")
+
+
+class GroupBookingCreateSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=128)
+    client_id = serializers.IntegerField()
+    room_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1)
+    check_in = serializers.DateField()
+    check_out = serializers.DateField()
+    guests = serializers.IntegerField(min_value=1, default=1)
+    notes = serializers.CharField(required=False, allow_blank=True, default="")
+    source = serializers.CharField(required=False, allow_blank=True, default="chat")
+
+    def validate(self, attrs):
+        if attrs["check_out"] <= attrs["check_in"]:
+            raise serializers.ValidationError("check_out must be after check_in.")
+        return attrs
+
+
 __all__ = [
     "RoomTypeSerializer",
     "RoomSerializer",
@@ -321,4 +346,6 @@ __all__ = [
     "RatePlanSerializer",
     "NotificationSerializer",
     "LoyaltyPointSerializer",
+    "GroupBookingSerializer",
+    "GroupBookingCreateSerializer",
 ]
