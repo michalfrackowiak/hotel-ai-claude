@@ -45,10 +45,13 @@ from hotel_ai.bookings.services import (
     cancel_waitlist_entry,
     mark_waitlist_as_booked,
     check_and_notify_waitlist,
+    issue_digital_key,
+    invalidate_digital_key,
+    get_or_create_digital_key,
 )
 from hotel_ai.bookings.invoices import generate_invoice_pdf
 
-from .models import Booking, BookingLog, BookingStatus, Client, GroupBooking, LoyaltyPoint, Notification, PromoCode, RatePlan, Room, RoomType, WaitlistEntry
+from .models import Booking, BookingLog, BookingStatus, Client, GroupBooking, LoyaltyPoint, Notification, PromoCode, RatePlan, Room, RoomType, WaitlistEntry, DigitalKey
 from .serializers import (
     AvailabilityRequestSerializer,
     AvailabilityResponseSerializer,
@@ -72,6 +75,7 @@ from .serializers import (
     GroupBookingCreateSerializer,
     WaitlistEntrySerializer,
     WaitlistEntryCreateSerializer,
+    DigitalKeySerializer,
 )
 
 
@@ -1206,3 +1210,44 @@ class WaitlistCheckView(APIView):
     def post(self, request):
         notified_ids = check_and_notify_waitlist()
         return JsonResponse({"notified_count": len(notified_ids), "entries": notified_ids})
+
+
+class DigitalKeyCreateView(APIView):
+    """POST /api/digital-keys/<booking_pk>/ — issue a digital key for a booking."""
+
+    permission_classes = [AllowAny]
+
+    def post(self, request, pk):
+        try:
+            booking = Booking.objects.select_related("room", "client").get(pk=pk)
+        except Booking.DoesNotExist:
+            return JsonResponse({"detail": "Booking not found"}, status=404)
+        if booking.status != BookingStatus.CHECKED_IN:
+            return JsonResponse({"detail": "Digital key can only be issued for checked-in bookings."}, status=400)
+        try:
+            key = get_or_create_digital_key(booking)
+        except ValueError as exc:
+            return JsonResponse({"detail": str(exc)}, status=400)
+        return JsonResponse(DigitalKeySerializer(key).data, status=201)
+
+
+class DigitalKeyDetailView(APIView):
+    """GET /api/digital-keys/<pk>/ — retrieve a digital key detail."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request, pk):
+        try:
+            key = DigitalKey.objects.select_related("booking__room", "booking__client").get(pk=pk)
+        except DigitalKey.DoesNotExist:
+            return JsonResponse({"detail": "Digital key not found"}, status=404)
+        return JsonResponse(DigitalKeySerializer(key).data)
+
+    def post(self, request, pk):
+        """Invalidate a digital key."""
+        try:
+            key = DigitalKey.objects.get(pk=pk)
+        except DigitalKey.DoesNotExist:
+            return JsonResponse({"detail": "Digital key not found"}, status=404)
+        invalidate_digital_key(key)
+        return JsonResponse({"message": "Digital key invalidated."})

@@ -31,6 +31,7 @@ from .models import (
     Room,
     RoomType,
     WaitlistEntry,
+    DigitalKey,
 )
 
 
@@ -721,6 +722,33 @@ def check_and_notify_waitlist() -> list:
     return notifications_sent
 
 
+def issue_digital_key(booking: Booking) -> DigitalKey:
+    """Issue a digital key code for a checked-in booking."""
+    if booking.status != BookingStatus.CHECKED_IN:
+        raise ValueError("Can only issue a digital key for a checked-in booking.")
+    if hasattr(booking, "digital_key"):
+        raise ValueError("A digital key already exists for this booking.")
+    return DigitalKey.objects.create(booking=booking)
+
+
+def invalidate_digital_key(key: DigitalKey) -> DigitalKey:
+    """Invalidate a digital key (guest returned card or booking cancelled)."""
+    if key.status != DigitalKey.Status.ACTIVE:
+        return key
+    key.invalidate()
+    return key
+
+
+def get_or_create_digital_key(booking: Booking) -> DigitalKey:
+    """Return existing key or create a new one for the booking."""
+    if hasattr(booking, "digital_key"):
+        dk = booking.digital_key
+        if dk.status == DigitalKey.Status.INACTIVE:
+            return issue_digital_key(booking)
+        return dk
+    return issue_digital_key(booking)
+
+
 __all__ = [
     "resolve_client",
     "resolve_pricing_rule",
@@ -748,4 +776,7 @@ __all__ = [
     "mark_waitlist_as_booked",
     "find_available_rooms_for_dates",
     "check_and_notify_waitlist",
+    "issue_digital_key",
+    "invalidate_digital_key",
+    "get_or_create_digital_key",
 ]

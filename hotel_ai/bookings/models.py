@@ -11,6 +11,8 @@ from __future__ import annotations
 import datetime as _dt
 from decimal import Decimal
 
+import secrets as _secrets
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -538,3 +540,42 @@ class WaitlistEntry(models.Model):
                 f"Please contact the front desk to complete your booking."
             ),
         )
+
+
+class DigitalKey(models.Model):
+    """A mobile-room key code issued to a checked-in guest."""
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "Active"
+        INVALIDATED = "invalidated", "Invalidated"
+        EXPIRED = "expired", "Expired"
+
+    booking = models.OneToOneField(
+        Booking, on_delete=models.CASCADE, related_name="digital_key"
+    )
+    code = models.CharField(max_length=16, unique=True, editable=False)
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.ACTIVE
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    invalidated_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "digital key"
+        verbose_name_plural = "digital keys"
+
+    def __str__(self) -> str:
+        return f"Key for {self.booking.room.room_number} ({self.code})"
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            self.code = _secrets.token_urlsafe(8).upper()[:8]
+        super().save(*args, **kwargs)
+
+    def invalidate(self) -> None:
+        if self.status == DigitalKey.Status.INVALIDATED:
+            return
+        self.status = DigitalKey.Status.INVALIDATED
+        self.invalidated_at = timezone.now()
+        self.save(update_fields=["status", "invalidated_at"])

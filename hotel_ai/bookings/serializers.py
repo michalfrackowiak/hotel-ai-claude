@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from .models import Booking, BookingLog, BookingStatus, Client, GroupBooking, LoyaltyPoint, Notification, PricingRule, Room, RoomType, PromoCode, RatePlan, WaitlistEntry
+from .models import Booking, BookingLog, BookingStatus, Client, GroupBooking, LoyaltyPoint, Notification, PricingRule, Room, RoomType, PromoCode, RatePlan, WaitlistEntry, DigitalKey
 from .services import (
     calculate_total,
     effective_price,
@@ -363,6 +363,30 @@ class WaitlistEntryCreateSerializer(serializers.Serializer):
         return attrs
 
 
+class DigitalKeySerializer(serializers.ModelSerializer):
+    booking_id = serializers.IntegerField(source="booking.id", read_only=True)
+    room_number = serializers.CharField(source="booking.room.room_number", read_only=True)
+    client_name = serializers.CharField(source="booking.client.full_name", read_only=True)
+    check_in = serializers.DateField(source="booking.check_in", read_only=True)
+    check_out = serializers.DateField(source="booking.check_out", read_only=True)
+
+    class Meta:
+        model = DigitalKey
+        fields = (
+            "id",
+            "booking_id",
+            "code",
+            "status",
+            "room_number",
+            "client_name",
+            "check_in",
+            "check_out",
+            "created_at",
+            "invalidated_at",
+        )
+        read_only_fields = ("id", "code", "created_at", "invalidated_at")
+
+
 __all__ = [
     "RoomTypeSerializer",
     "RoomSerializer",
@@ -387,4 +411,5 @@ __all__ = [
     "GroupBookingCreateSerializer",
     "WaitlistEntrySerializer",
     "WaitlistEntryCreateSerializer",
+    "DigitalKeySerializer",
 ]

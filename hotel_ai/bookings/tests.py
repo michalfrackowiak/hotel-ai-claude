@@ -18,6 +18,7 @@ from hotel_ai.bookings.models import (
     BookingLog,
     BookingStatus,
     Client,
+    DigitalKey,
     GroupBooking,
     LoyaltyPoint,
     Notification,
@@ -45,6 +46,9 @@ from hotel_ai.bookings.services import (
     cancel_waitlist_entry,
     mark_waitlist_as_booked,
     check_and_notify_waitlist,
+    issue_digital_key,
+    invalidate_digital_key,
+    get_or_create_digital_key,
 )
 
 
@@ -325,3 +329,116 @@ def test_waitlist_invalid_dates(client):
         "check_out": "2026-12-01",
     })
     assert response.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Digital Key API tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_digital_key_create(client, double):
+    """POST /api/bookings/<pk>/key/ issues a key for a checked-in booking."""
+    rt, room = double
+    booking = Booking.objects.create(
+        room=room,
+        client=Client.objects.create(first_name="Key", last_name="Holder", email="key@example.com"),
+        check_in=_dt.date(2026, 12, 1),
+        check_out=_dt.date(2026, 12, 3),
+        status=BookingStatus.CHECKED_IN,
+        total_price=Decimal("600.00"),
+    )
+    response = client.post(f"/api/bookings/{booking.id}/key/")
+    assert response.status_code == 201
+    data = response.json()
+    assert data["status"] == "active"
+    assert len(data["code"]) == 8
+    assert data["room_number"] == room.room_number
+
+
+@pytest.mark.django_db
+def test_digital_key_get(client, double):
+    """GET /api/digital-keys/<pk>/ returns key detail."""
+    rt, room = double
+    booking = Booking.objects.create(
+        room=room,
+        client=Client.objects.create(first_name="Key", last_name="Get", email="keyget@example.com"),
+        check_in=_dt.date(2026, 12, 1),
+        check_out=_dt.date(2026, 12, 2),
+        status=BookingStatus.CHECKED_IN,
+        total_price=Decimal("300.00"),
+    )
+    key = issue_digital_key(booking)
+    response = client.get(f"/api/digital-keys/{key.id}/")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["code"] == key.code
+    assert data["booking_id"] == booking.id
+
+
+@pytest.mark.django_db
+def test_digital_key_invalidate(client, double):
+    """POST /api/digital-keys/<pk>/ invalidates an active key."""
+    rt, room = double
+    booking = Booking.objects.create(
+        room=room,
+        client=Client.objects.create(first_name="Inv", last_name="Test", email="inv@example.com"),
+        check_in=_dt.date(2026, 12, 1),
+        check_out=_dt.date(2026, 12, 2),
+        status=BookingStatus.CHECKED_IN,
+        total_price=Decimal("300.00"),
+    )
+    key = issue_digital_key(booking)
+    response = client.post(f"/api/digital-keys/{key.id}/")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["message"] == "Digital key invalidated."
+    key.refresh_from_db()
+    assert key.status == "invalidated"
+    assert key.invalidated_at is not None
+
+
+@pytest.mark.django_db
+def test_digital_key_not_checked_in(client, double):
+    """Issuing a key for a non-checked-in booking returns 400."""
+    rt, room = double
+    booking = Booking.objects.create(
+        room=room,
+        client=Client.objects.create(first_name="Not", last_name="In", email="notin@example.com"),
+        check_in=_dt.date(2026, 12, 1),
+        check_out=_dt.date(2026, 12, 2),
+        status=BookingStatus.CONFIRMED,
+        total_price=Decimal("300.00"),
+    )
+    response = client.post(f"/api/bookings/{booking.id}/key/")
+    assert response.status_code == 400
+    assert "checked-in" in response.json()["detail"].lower()
+
+
+@pytest.mark.django_db
+def test_digital_key_not_found(client):
+    response = client.get("/api/digital-keys/99999/")
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_digital_key_booking_not_found(client):
+    response = client.post("/api/bookings/99999/key/")
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_issue_digital_key_already_exists(client, double):
+    """Service raises ValueError when key already exists for a booking."""
+    rt, room = double
+    booking = Booking.objects.create(
+        room=room,
+        client=Client.objects.create(first_name="Dup", last_name="Key", email="dup@example.com"),
+        check_in=_dt.date(2026, 12, 1),
+        check_out=_dt.date(2026, 12, 2),
+        status=BookingStatus.CHECKED_IN,
+        total_price=Decimal("300.00"),
+    )
+    issue_digital_key(booking)
+    with pytest.raises(ValueError, match="already exists"):
+        issue_digital_key(booking)

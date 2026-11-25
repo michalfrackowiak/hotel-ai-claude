@@ -40,6 +40,8 @@ from .views import (
     WaitlistEntryListView,
     WaitlistEntryDetailView,
     WaitlistCheckView,
+    DigitalKeyCreateView,
+    DigitalKeyDetailView,
 )
 
 app_name = "bookings"
@@ -82,4 +84,6 @@ urlpatterns = [
     path("waitlist/list/", WaitlistEntryListView.as_view(), name="waitlist-list"),
     path("waitlist/<int:pk>/", WaitlistEntryDetailView.as_view(), name="waitlist-detail"),
     path("waitlist/check/", WaitlistCheckView.as_view(), name="waitlist-check"),
+    path("digital-keys/<int:pk>/", DigitalKeyDetailView.as_view(), name="digital-key-detail"),
+    path("bookings/<int:pk>/key/", DigitalKeyCreateView.as_view(), name="digital-key-create"),
 ]
