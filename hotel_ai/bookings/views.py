@@ -8,6 +8,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse, StreamingHttpResponse
 from django.shortcuts import render
+from django.utils import timezone
 from rest_framework import status
 import json as _json
 from rest_framework.decorators import api_view, permission_classes
@@ -41,7 +42,7 @@ from hotel_ai.bookings.services import (
 )
 from hotel_ai.bookings.invoices import generate_invoice_pdf
 
-from .models import Booking, BookingLog, BookingStatus, Client, PromoCode, RatePlan, Room, RoomType
+from .models import Booking, BookingLog, BookingStatus, Client, LoyaltyPoint, Notification, PromoCode, RatePlan, Room, RoomType
 from .serializers import (
     AvailabilityRequestSerializer,
     AvailabilityResponseSerializer,
@@ -59,6 +60,8 @@ from .serializers import (
     RatePlanSerializer,
     RoomSerializer,
     RoomTypeSerializer,
+    NotificationSerializer,
+    LoyaltyPointSerializer,
 )
 
 
@@ -937,4 +940,91 @@ class BookingInvoiceView(APIView):
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
         response["Content-Disposition"] = f'attachment; filename="invoice_{pk}.pdf"'
         return response
+
+
+class NotificationListView(APIView):
+    """GET /api/notifications/?client=<client_id> — list a client's notifications.
+
+    Query params:
+        client (required): the Client.id whose notifications are listed.
+        unread (optional): "1" to return only unread notifications.
+    """
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        client_id = request.GET.get("client")
+        if not client_id:
+            return JsonResponse({"detail": "client parameter required"}, status=400)
+        try:
+            client = Client.objects.get(pk=client_id)
+        except (Client.DoesNotExist, ValueError):
+            return JsonResponse({"detail": "Client not found"}, status=404)
+
+        qs = client.notifications.all()
+        if request.GET.get("unread") in ("1", "true"):
+            qs = qs.filter(read_at__isnull=True)
+        data = [
+            {**NotificationSerializer(n).data, "unread": n.read_at is None}
+            for n in qs
+        ]
+        return JsonResponse(data, safe=False)
+
+
+class NotificationReadView(APIView):
+    """POST /api/notifications/<int:pk>/read/ — mark one notification as read.
+
+    Accepts optional {"all": true} to mark every notification of the same
+    recipient as read.
+    """
+
+    permission_classes = [AllowAny]
+
+    def post(self, request, pk):
+        try:
+            notification = Notification.objects.select_related("recipient").get(pk=pk)
+        except Notification.DoesNotExist:
+            return JsonResponse({"detail": "Notification not found"}, status=404)
+
+        client = notification.recipient
+        mark_all = bool(request.data.get("all")) if isinstance(request.data, dict) else False
+        if mark_all:
+            updated = client.notifications.filter(read_at__isnull=True).update(
+                read_at=timezone.now()
+            )
+        else:
+            if notification.read_at is None:
+                notification.read_at = timezone.now()
+                notification.save(update_fields=["read_at"])
+            updated = 1
+
+        return JsonResponse({
+            "marked_read": updated,
+            "message": "Notifications marked as read.",
+        })
+
+
+class LoyaltyBalanceView(APIView):
+    """GET /api/loyalty/balance/?client=<id> — get a client's loyalty point balance."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        client_id = request.GET.get("client")
+        if not client_id:
+            return JsonResponse({"detail": "client parameter required"}, status=400)
+        try:
+            client = Client.objects.get(pk=client_id)
+        except (Client.DoesNotExist, ValueError):
+            return JsonResponse({"detail": "Client not found"}, status=404)
+
+        history = [
+            {**LoyaltyPointSerializer(lp).data, "absolute_points": lp.absolute_points}
+            for lp in client.loyalty_points.all()[:20]
+        ]
+        return JsonResponse({
+            "client_id": client.id,
+            "balance": client.loyalty_balance,
+            "history": history,
+        })
 

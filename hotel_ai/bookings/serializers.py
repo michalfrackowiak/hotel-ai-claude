@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from .models import Booking, BookingLog, BookingStatus, Client, PricingRule, Room, RoomType, PromoCode, RatePlan
+from .models import Booking, BookingLog, BookingStatus, Client, LoyaltyPoint, Notification, PricingRule, Room, RoomType, PromoCode, RatePlan
 from .services import (
     calculate_total,
     effective_price,
@@ -287,6 +287,20 @@ class PreArrivalSerializer(serializers.Serializer):
         return value
 
 
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = ("id", "type", "message", "read_at", "created_at")
+        read_only_fields = ("id", "created_at")
+
+
+class LoyaltyPointSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LoyaltyPoint
+        fields = ("id", "booking", "points", "action", "description", "created_at")
+        read_only_fields = ("id", "created_at")
+
+
 __all__ = [
     "RoomTypeSerializer",
     "RoomSerializer",
@@ -305,4 +319,6 @@ __all__ = [
     "BookingRequestSerializer",
     "BookingResponseSerializer",
     "RatePlanSerializer",
+    "NotificationSerializer",
+    "LoyaltyPointSerializer",
 ]

@@ -243,3 +243,7 @@ TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
 TWILIO_FROM_NUMBER = os.environ.get("TWILIO_FROM_NUMBER", "")
 TWILIO_WHATSAPP_FROM = os.environ.get("TWILIO_WHATSAPP_FROM", "")
+
+# Loyalty Points
+LOYALTY_POINTS_PER_NIGHT = int(os.environ.get("LOYALTY_POINTS_PER_NIGHT", 50))
+LOYALTY_MAX_POINTS = int(os.environ.get("LOYALTY_MAX_POINTS", 1000))

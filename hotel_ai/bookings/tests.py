@@ -18,6 +18,8 @@ from hotel_ai.bookings.models import (
     BookingLog,
     BookingStatus,
     Client,
+    LoyaltyPoint,
+    Notification,
     PricingRule,
     RatePlan,
     Room,
@@ -3193,3 +3195,370 @@ def test_sms_failure_does_not_break_booking(double, client_fixture):
         mock_client.return_value = None  # simulates missing credentials
         result = send_sms_confirmation(booking)
         assert result is False
+
+
+# ---------------------------------------------------------------------------
+# In-app notifications
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+def test_notification_created_on_booking():
+    """create_booking should persist a notification for the client."""
+    from hotel_ai.bookings.services import create_booking
+
+    tag = uuid.uuid4().hex[:6]
+    rt = RoomType.objects.create(name=f"Test-{tag}", base_price_per_night=Decimal("500"))
+    room = Room.objects.create(room_number=f"TEST-{tag}-1", room_type=rt, floor=1)
+    client = Client.objects.create(first_name="Notify", last_name="Test", email=f"notify{tag}@x.com")
+
+    booking = create_booking(
+        room=room,
+        client=client,
+        check_in=_dt.date(2026, 12, 1),
+        check_out=_dt.date(2026, 12, 3),
+    )
+
+    assert client.notifications.count() >= 1
+    recent = client.notifications.first()
+    assert recent.recipient == client
+    assert recent.booking == booking
+
+
+@pytest.mark.django_db
+def test_notification_created_on_check_in(double, client_fixture):
+    """check_in_booking should create a CHECKED_IN notification."""
+    booking = create_booking(
+        room=double[1],
+        client=client_fixture,
+        check_in=_dt.date(2026, 12, 1),
+        check_out=_dt.date(2026, 12, 3),
+    )
+    check_in_booking(booking)
+
+    assert client_fixture.notifications.filter(
+        type=Notification.Type.CHECKED_IN
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_notification_created_on_cancel(double, client_fixture):
+    """cancel_booking should create a CANCELLED notification."""
+    booking = create_booking(
+        room=double[1],
+        client=client_fixture,
+        check_in=_dt.date(2026, 12, 1),
+        check_out=_dt.date(2026, 12, 3),
+    )
+    cancel_booking(booking)
+
+    assert client_fixture.notifications.filter(
+        type=Notification.Type.CANCELLED
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_list_notifications_api(client, double, client_fixture):
+    """GET /api/notifications/ returns a client's notifications."""
+    booking = create_booking(
+        room=double[1],
+        client=client_fixture,
+        check_in=_dt.date(2026, 12, 1),
+        check_out=_dt.date(2026, 12, 3),
+    )
+    response = client.get(f"/api/notifications/?client={booking.client_id}")
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    assert len(data) > 0
+    # Each item should have required fields
+    item = data[0]
+    assert "id" in item
+    assert "type" in item
+    assert "message" in item
+    assert "unread" in item
+
+
+@pytest.mark.django_db
+def test_list_notifications_requires_client(client):
+    """Notifications endpoint requires a client parameter."""
+    response = client.get("/api/notifications/")
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_list_notifications_returns_404_for_missing_client(client):
+    response = client.get("/api/notifications/?client=99999")
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_list_notifications_unread_filter(client, double, client_fixture):
+    """?unread=1 should return only unread notifications."""
+    booking = create_booking(
+        room=double[1],
+        client=client_fixture,
+        check_in=_dt.date(2026, 12, 1),
+        check_out=_dt.date(2026, 12, 3),
+    )
+    notif = client_fixture.notifications.first()
+    assert notif is not None
+    notif.read_at = timezone.now()
+    notif.save()
+
+    response = client.get(f"/api/notifications/?client={client_fixture.id}&unread=1")
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+@pytest.mark.django_db
+def test_mark_read_api(client, double, client_fixture):
+    """POST /api/notifications/<pk>/read/ marks notification as read."""
+    booking = create_booking(
+        room=double[1],
+        client=client_fixture,
+        check_in=_dt.date(2026, 12, 1),
+        check_out=_dt.date(2026, 12, 3),
+    )
+    notif = client_fixture.notifications.first()
+    assert notif is not None
+    assert notif.read_at is None
+
+    response = client.post(f"/api/notifications/{notif.id}/read/")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["marked_read"] == 1
+
+    notif.refresh_from_db()
+    assert notif.read_at is not None
+
+
+@pytest.mark.django_db
+def test_mark_all_read_api(client, double, client_fixture):
+    """POST with {"all": true} marks all of client's unread notifications."""
+    # Create two bookings to have multiple notifications
+    booking1 = create_booking(
+        room=double[1],
+        client=client_fixture,
+        check_in=_dt.date(2026, 12, 1),
+        check_out=_dt.date(2026, 12, 3),
+    )
+    booking2 = create_booking(
+        room=double[1],
+        client=client_fixture,
+        check_in=_dt.date(2026, 12, 5),
+        check_out=_dt.date(2026, 12, 7),
+    )
+    # Mark only the first as read
+    notif1 = client_fixture.notifications.order_by("created_at").first()
+    notif1.read_at = timezone.now()
+    notif1.save()
+
+    # Now there should be exactly 1 unread notification
+    assert client_fixture.notifications.filter(read_at__isnull=True).count() == 1
+
+    # Hit any existing notification with all=true
+    existing = client_fixture.notifications.last()
+    response = client.post(f"/api/notifications/{existing.id}/read/", {"all": True})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["marked_read"] >= 1
+    assert client_fixture.notifications.filter(read_at__isnull=True).count() == 0
+
+
+@pytest.mark.django_db
+def test_mark_read_404_for_missing_notification(client):
+    response = client.post("/api/notifications/99999/read/")
+    assert response.status_code == 404
+
+
+# --- Loyalty Points Tests ---
+
+@pytest.mark.django_db
+def test_loyalty_points_awarded_on_checkout():
+    """check_out_booking should award loyalty points based on nights stayed."""
+    tag = uuid.uuid4().hex[:6]
+    rt = RoomType.objects.create(name=f"Test-{tag}", base_price_per_night=Decimal("500"))
+    room = Room.objects.create(room_number=f"TEST-{tag}-1", room_type=rt, floor=1)
+    client = Client.objects.create(first_name="Loyalty", last_name="Test", email=f"loyalty{tag}@x.com")
+
+    booking = create_booking(
+        room=room,
+        client=client,
+        check_in=_dt.date(2026, 12, 1),
+        check_out=_dt.date(2026, 12, 4),  # 3 nights
+    )
+    assert booking.nights == 3
+
+    check_in_booking(booking)
+    check_out_booking(booking)
+
+    points = LoyaltyPoint.objects.filter(client=client, action=LoyaltyPoint.Action.EARNED)
+    assert points.count() == 1
+    earned_point = points.first()
+    assert earned_point.points == 150  # 3 nights * 50 points/night
+    assert earned_point.booking == booking
+    assert earned_point.description == "Earned 150 points for 3 nights"
+    assert client.loyalty_balance == 150
+
+
+@pytest.mark.django_db
+def test_loyalty_points_capped_at_max():
+    """Loyalty points should be capped at LOYALTY_MAX_POINTS."""
+    with override_settings(LOYALTY_POINTS_PER_NIGHT=100, LOYALTY_MAX_POINTS=200):
+        tag = uuid.uuid4().hex[:6]
+        rt = RoomType.objects.create(name=f"Test-{tag}", base_price_per_night=Decimal("500"))
+        room = Room.objects.create(room_number=f"TEST-{tag}-1", room_type=rt, floor=1)
+        client = Client.objects.create(first_name="CapTest", last_name="X", email=f"cap{tag}@x.com")
+
+        booking = create_booking(
+            room=room,
+            client=client,
+            check_in=_dt.date(2026, 12, 1),
+            check_out=_dt.date(2026, 12, 10),  # 9 nights → would be 900, cap at 200
+        )
+        check_in_booking(booking)
+        check_out_booking(booking)
+
+        points = LoyaltyPoint.objects.filter(client=client, action=LoyaltyPoint.Action.EARNED)
+        assert points.count() == 1
+        assert points.first().points == 200
+        assert client.loyalty_balance == 200
+
+
+@pytest.mark.django_db
+def test_loyalty_points_not_awarded_on_cancel():
+    """Canceling a booking should not award loyalty points."""
+    tag = uuid.uuid4().hex[:6]
+    rt = RoomType.objects.create(name=f"Test-{tag}", base_price_per_night=Decimal("500"))
+    room = Room.objects.create(room_number=f"TEST-{tag}-1", room_type=rt, floor=1)
+    client = Client.objects.create(first_name="NoPoints", last_name="Test", email=f"nopts{tag}@x.com")
+
+    booking = create_booking(
+        room=room,
+        client=client,
+        check_in=_dt.date(2026, 12, 1),
+        check_out=_dt.date(2026, 12, 3),
+    )
+    cancel_booking(booking)
+
+    points = LoyaltyPoint.objects.filter(client=client)
+    assert points.count() == 0
+    assert client.loyalty_balance == 0
+
+
+@pytest.mark.django_db
+def test_loyalty_balance_multi_bookings():
+    """Balance should sum across multiple bookings."""
+    tag = uuid.uuid4().hex[:6]
+    rt = RoomType.objects.create(name=f"Test-{tag}", base_price_per_night=Decimal("500"))
+    room1 = Room.objects.create(room_number=f"TEST-{tag}-1", room_type=rt, floor=1)
+    room2 = Room.objects.create(room_number=f"TEST-{tag}-2", room_type=rt, floor=2)
+    client = Client.objects.create(first_name="Multi", last_name="Test", email=f"multi{tag}@x.com")
+
+    b1 = create_booking(room=room1, client=client, check_in=_dt.date(2026, 1, 1), check_out=_dt.date(2026, 1, 3))
+    b2 = create_booking(room=room2, client=client, check_in=_dt.date(2026, 3, 1), check_out=_dt.date(2026, 3, 5))
+
+    check_in_booking(b1)
+    check_out_booking(b1)  # 2 nights = 100 pts
+    check_in_booking(b2)
+    check_out_booking(b2)  # 4 nights = 200 pts
+
+    assert client.loyalty_balance == 300
+    assert LoyaltyPoint.objects.filter(client=client, action=LoyaltyPoint.Action.EARNED).count() == 2
+
+
+@pytest.mark.django_db
+def test_loyalty_redemption():
+    """Redeeming points should reduce balance correctly."""
+    tag = uuid.uuid4().hex[:6]
+    rt = RoomType.objects.create(name=f"Test-{tag}", base_price_per_night=Decimal("500"))
+    room = Room.objects.create(room_number=f"TEST-{tag}-1", room_type=rt, floor=1)
+    client = Client.objects.create(first_name="Redeem", last_name="X", email=f"redeem{tag}@x.com")
+
+    booking = create_booking(room=room, client=client, check_in=_dt.date(2026, 1, 1), check_out=_dt.date(2026, 1, 3))
+    check_in_booking(booking)
+    check_out_booking(booking)  # 100 pts
+    assert client.loyalty_balance == 100
+
+    # Redeem 40 points
+    LoyaltyPoint.objects.create(
+        client=client,
+        points=-40,
+        action=LoyaltyPoint.Action.REDEEMED,
+        description="Redeemed 40 points for discount",
+    )
+    assert client.loyalty_balance == 60
+
+    # Redeem all
+    LoyaltyPoint.objects.create(
+        client=client,
+        points=-60,
+        action=LoyaltyPoint.Action.REDEEMED,
+        description="Redeemed remaining 60 points",
+    )
+    assert client.loyalty_balance == 0
+
+
+@pytest.mark.django_db
+def test_loyalty_negative_balance_allowed():
+    """Balance can go negative if redemption exceeds earnings."""
+    tag = uuid.uuid4().hex[:6]
+    client = Client.objects.create(first_name="Negative", last_name="X", email=f"neg{tag}@x.com")
+
+    # Redeem without earning any points first
+    LoyaltyPoint.objects.create(
+        client=client,
+        points=-100,
+        action=LoyaltyPoint.Action.REDEEMED,
+        description="Overspent",
+    )
+    assert client.loyalty_balance == -100
+
+
+@pytest.mark.django_db
+def test_loyalty_balance_api(client):
+    """GET /api/loyalty/balance/ returns correct data."""
+    tag = uuid.uuid4().hex[:6]
+    rt = RoomType.objects.create(name=f"Test-{tag}", base_price_per_night=Decimal("500"))
+    room = Room.objects.create(room_number=f"TEST-{tag}-1", room_type=rt, floor=1)
+    c = Client.objects.create(first_name="ApiTest", last_name="X", email=f"apitest{tag}@x.com")
+
+    booking = create_booking(room=room, client=c, check_in=_dt.date(2026, 1, 1), check_out=_dt.date(2026, 1, 4))
+    check_in_booking(booking)
+    check_out_booking(booking)  # 150 pts
+
+    response = client.get(f"/api/loyalty/balance/?client={c.id}")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["client_id"] == c.id
+    assert data["balance"] == 150
+    assert len(data["history"]) == 1
+    assert data["history"][0]["points"] == 150
+
+
+@pytest.mark.django_db
+def test_loyalty_balance_api_missing_client_param(client):
+    response = client.get("/api/loyalty/balance/")
+    assert response.status_code == 400
+    assert "client parameter required" in response.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_loyalty_balance_api_nonexistent_client(client):
+    response = client.get("/api/loyalty/balance/?client=99999")
+    assert response.status_code == 404
+    assert "Client not found" in response.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_loyalty_point_absolute_points_property():
+    """absolute_points should return the absolute value of points."""
+    dumpy = Client.objects.create(first_name="Dummy", last_name="X", email="dummy@test.com")
+    lp_positive = LoyaltyPoint.objects.create(
+        client=dumpy, points=50, action=LoyaltyPoint.Action.EARNED,
+    )
+    lp_negative = LoyaltyPoint.objects.create(
+        client=dumpy, points=-30, action=LoyaltyPoint.Action.REDEEMED,
+    )
+    assert lp_positive.absolute_points == 50
+    assert lp_negative.absolute_points == 30

@@ -76,6 +76,12 @@ class Client(models.Model):
     def full_name(self) -> str:
         return f"{self.first_name} {self.last_name}".strip()
 
+    @property
+    def loyalty_balance(self) -> int:
+        earned = self.loyalty_points.filter(action="earned").aggregate(total=models.Sum("points"))["total"] or 0
+        redeemed = abs(self.loyalty_points.filter(action="redeemed").aggregate(total=models.Sum("points"))["total"] or 0)
+        return earned - redeemed
+
     def __str__(self) -> str:  # pragma: no cover - trivial
         return self.full_name or self.email
 
@@ -264,6 +270,15 @@ class Booking(models.Model):
             f"{self.check_in:%Y-%m-%d} -> {self.check_out:%Y-%m-%d} [{self.status}]"
         )
 
+    def send_notification(self, notif_type: Notification.Type, message: str) -> None:
+        """Create an in-app notification for this booking's client."""
+        Notification.objects.create(
+            type=notif_type,
+            recipient=self.client,
+            booking=self,
+            message=message,
+        )
+
 
 class BookingLog(models.Model):
     """Audit log for every status transition on a booking."""
@@ -283,6 +298,79 @@ class BookingLog(models.Model):
 
     def __str__(self) -> str:  # pragma: no cover - trivial
         return f"#{self.booking_id} → {self.action}"
+
+
+class Notification(models.Model):
+    """In-app notification for guests about their booking."""
+
+    class Type(models.TextChoices):
+        CONFIRMED = "confirmed", "Booking Confirmed"
+        REMINDER = "reminder", "Check-in Reminder"
+        CHECKED_IN = "checked_in", "You Have Checked In"
+        CANCELLED = "cancelled", "Booking Cancelled"
+        MODIFIED = "modified", "Booking Modified"
+
+    type = models.CharField(max_length=32, choices=Type.choices)
+    recipient = models.ForeignKey(
+        Client,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+    )
+    booking = models.ForeignKey(
+        Booking,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+        null=True,
+        blank=True,
+    )
+    message = models.TextField()
+    read_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.recipient} ← {self.get_type_display()}"
+
+    @property
+    def unread(self) -> bool:
+        return self.read_at is None
+
+
+class LoyaltyPoint(models.Model):
+    """A single loyalty-point transaction for a client."""
+
+    class Action(models.TextChoices):
+        EARNED = "earned", "Earned"
+        REDEEMED = "redeemed", "Redeemed"
+
+    client = models.ForeignKey(
+        Client,
+        on_delete=models.CASCADE,
+        related_name="loyalty_points",
+    )
+    booking = models.ForeignKey(
+        Booking,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="loyalty_points",
+    )
+    points = models.IntegerField(help_text="Positive = earned, negative = redeemed.")
+    action = models.CharField(max_length=16, choices=Action.choices)
+    description = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.client} {'+' if self.points > 0 else ''}{self.points}"
+
+    @property
+    def absolute_points(self) -> int:
+        return abs(self.points)
 
 
 class CancellationPolicy(models.Model):

@@ -23,6 +23,8 @@ from .models import (
     BookingStatus,
     CancellationPolicy,
     Client,
+    LoyaltyPoint,
+    Notification,
     PricingRule,
     RatePlan,
     Room,
@@ -219,6 +221,15 @@ def create_booking(
 
     BookingLog.objects.create(booking=booking, action="created", notes=notes)
 
+    # Create in-app notification.
+    try:
+        booking.send_notification(
+            Notification.Type.CONFIRMED,
+            f"Your booking at room {booking.room.room_number} has been confirmed!",
+        )
+    except Exception:  # noqa: BLE001
+        logger.debug("Notification creation failed for booking %s", booking.id, exc_info=True)
+
     # Best-effort push to the room's calendar (no Google creds = skipped).
     try:
         from hotel_ai.calendar_integration.services import sync_booking
@@ -254,6 +265,15 @@ def check_in_booking(booking: Booking) -> Booking:
     booking.save()
     BookingLog.objects.create(booking=booking, action="checked_in")
 
+    # Create in-app notification.
+    try:
+        booking.send_notification(
+            Notification.Type.CHECKED_IN,
+            f"Welcome! You have checked into room {booking.room.room_number}.",
+        )
+    except Exception:  # noqa: BLE001
+        logger.debug("Notification creation failed for booking %s", booking.id, exc_info=True)
+
     try:
         from .emails import send_checkin_instructions
         if booking.client.email:
@@ -273,12 +293,26 @@ def check_in_booking(booking: Booking) -> Booking:
 
 
 def check_out_booking(booking: Booking) -> Booking:
-    """Mark a checked-in booking as checked out."""
+    """Mark a checked-in booking as checked out and award loyalty points."""
     if booking.status != BookingStatus.CHECKED_IN:
         raise ValueError(f"Booking {booking.id} is {booking.status}, expected checked_in")
     booking.status = BookingStatus.CHECKED_OUT
     booking.save()
     BookingLog.objects.create(booking=booking, action="checked_out")
+
+    # Award loyalty points (50 per night, max 1000)
+    from django.conf import settings
+    POINTS_PER_NIGHT = getattr(settings, "LOYALTY_POINTS_PER_NIGHT", 50)
+    MAX_POINTS = getattr(settings, "LOYALTY_MAX_POINTS", 1000)
+    earned_points = min(booking.nights * POINTS_PER_NIGHT, MAX_POINTS)
+    if earned_points > 0:
+        LoyaltyPoint.objects.create(
+            client=booking.client,
+            booking=booking,
+            points=earned_points,
+            action=LoyaltyPoint.Action.EARNED,
+            description=f"Earned {earned_points} points for {booking.nights} nights",
+        )
     return booking
 
 
@@ -288,6 +322,16 @@ def cancel_booking(booking: Booking) -> Booking:
         booking.status = BookingStatus.CANCELLED
         booking.save()
         BookingLog.objects.create(booking=booking, action="cancelled")
+
+        # Create in-app notification.
+        try:
+            booking.send_notification(
+                Notification.Type.CANCELLED,
+                f"Your booking at room {booking.room.room_number} has been cancelled.",
+            )
+        except Exception:  # noqa: BLE001
+            logger.debug("Notification creation failed for booking %s", booking.id, exc_info=True)
+
         try:
             from hotel_ai.calendar_integration.services import sync_booking
 
