@@ -235,6 +235,14 @@ def create_booking(
     except Exception:  # noqa: BLE001
         logger.debug("Booking confirmation email failed for %s", booking.id, exc_info=True)
 
+    # Best-effort SMS notification.
+    try:
+        from .sms import send_sms_confirmation
+        if booking.client.phone:
+            send_sms_confirmation(booking)
+    except Exception:  # noqa: BLE001
+        logger.debug("SMS confirmation failed for %s", booking.id, exc_info=True)
+
     return booking
 
 
@@ -252,6 +260,14 @@ def check_in_booking(booking: Booking) -> Booking:
             send_checkin_instructions(booking)
     except Exception:  # noqa: BLE001
         logger.debug("Check-in email failed for booking %s", booking.id, exc_info=True)
+
+    # Best-effort check-in SMS notification.
+    try:
+        from .sms import send_sms_checkin
+        if booking.client.phone:
+            send_sms_checkin(booking)
+    except Exception:  # noqa: BLE001
+        logger.debug("SMS check-in failed for booking %s", booking.id, exc_info=True)
 
     return booking
 

@@ -235,3 +235,11 @@ GOOGLE_CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar"]
 GOOGLE_CREDENTIALS_FILE = os.environ.get(
     "GOOGLE_CREDENTIALS_FILE", str(BASE_DIR / "google-credentials.json")
 )
+
+# ---------------------------------------------------------------------------
+# SMS / WhatsApp (Twilio)
+# ---------------------------------------------------------------------------
+TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
+TWILIO_FROM_NUMBER = os.environ.get("TWILIO_FROM_NUMBER", "")
+TWILIO_WHATSAPP_FROM = os.environ.get("TWILIO_WHATSAPP_FROM", "")

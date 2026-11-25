@@ -3032,3 +3032,164 @@ def test_invoice_includes_rate_plan(client, double, client_fixture):
     assert response["Content-Type"] == "application/pdf"
     assert len(response.content) > 0
     assert response.content.startswith(b"%PDF")
+
+
+# ---------------------------------------------------------------------------
+# SMS / WhatsApp notifications
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+def test_sms_format_booking_message(double, client_fixture):
+    """format_booking_message produces a concise text summary."""
+    from hotel_ai.bookings.sms import format_booking_message
+    _, room = double
+    plan = RatePlan.objects.create(
+        name="Corporate Discount",
+        plan_type=RatePlan.PlanType.CORPORATE_DISCOUNT,
+        corporate_discount_pct=15,
+    )
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 11, 1),
+        check_out=_dt.date(2026, 11, 3),
+        rate_plan=plan,
+    )
+
+    msg = format_booking_message(booking, subject="Welcome!")
+    assert "Booking #" in msg
+    assert "Guest:" in msg
+    assert "Room:" in msg
+    assert "Check-in:" in msg
+    assert "Check-out:" in msg
+    assert "Nights:" in msg
+    assert "Total:" in msg
+    assert plan.name in msg
+
+
+@pytest.mark.django_db
+def test_sms_sends_on_booking_creation(client, double, client_fixture):
+    """create_booking sends an SMS when phone is present (best-effort)."""
+    from unittest import mock
+    client_fixture.phone = "+48123456789"
+    client_fixture.save()
+
+    calls: list[dict] = []
+
+    def _capture(*args, **kwargs):
+        calls.append(kwargs)
+        return mock.Mock(sid="SM123")
+
+    with mock.patch("hotel_ai.bookings.sms._get_twilio_client") as mock_client:
+        mock_instance = mock.Mock()
+        mock_instance.messages.create = _capture
+        mock_client.return_value = mock_instance
+
+        _, room = double
+        booking = create_booking(
+            room=room,
+            client=client_fixture,
+            check_in=_dt.date(2026, 11, 1),
+            check_out=_dt.date(2026, 11, 3),
+        )
+
+    assert len(calls) == 1
+    assert calls[0]["body"] is not None
+    assert "Booking #" in calls[0]["body"]
+
+
+@pytest.mark.django_db
+def test_sms_skips_when_no_phone(double, client_fixture):
+    """SMS is skipped when client has no phone number."""
+    from unittest import mock
+
+    with mock.patch("hotel_ai.bookings.sms._get_twilio_client") as mock_client:
+        mock_instance = mock.Mock()
+        mock_client.return_value = mock_instance
+
+        _, room = double
+        booking = create_booking(
+            room=room,
+            client=client_fixture,
+            check_in=_dt.date(2026, 11, 1),
+            check_out=_dt.date(2026, 11, 3),
+        )
+
+    mock_instance.messages.create.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_sms_skips_when_credentials_missing():
+    """_get_twilio_client returns None when credentials are missing."""
+    from hotel_ai.bookings.sms import _get_twilio_client
+
+    client = _get_twilio_client()
+    assert client is None
+
+
+@pytest.mark.django_db
+def test_whatsapp_requires_plus_prefix():
+    """WhatsApp messages require phone numbers starting with +."""
+    from unittest import mock
+    from hotel_ai.bookings.sms import _send_message
+
+    with mock.patch("hotel_ai.bookings.sms._get_twilio_client") as mock_client:
+        mock_instance = mock.Mock()
+        mock_client.return_value = mock_instance
+
+        result = _send_message("invalid", "Test message", channel="whatsapp")
+        assert result is False
+
+
+@pytest.mark.django_db
+def test_check_in_triggers_sms_notification(double, client_fixture):
+    """check_in_booking sends SMS confirmation when phone is set."""
+    from unittest import mock
+
+    client_fixture.phone = "+48123456789"
+    client_fixture.save()
+
+    calls: list[dict] = []
+
+    def _capture(*args, **kwargs):
+        calls.append(kwargs)
+        return mock.Mock(sid="SM456")
+
+    with mock.patch("hotel_ai.bookings.sms._get_twilio_client") as mock_client:
+        mock_instance = mock.Mock()
+        mock_instance.messages.create = _capture
+        mock_client.return_value = mock_instance
+
+        _, room = double
+        booking = create_booking(
+            room=room,
+            client=client_fixture,
+            check_in=_dt.date(2026, 11, 1),
+            check_out=_dt.date(2026, 11, 3),
+        )
+        check_in_booking(booking)
+
+    assert any("checked in" in c["body"].lower() for c in calls)
+
+
+@pytest.mark.django_db
+def test_sms_failure_does_not_break_booking(double, client_fixture):
+    """SMS failures are silently ignored (best-effort pattern)."""
+    from unittest import mock
+    from hotel_ai.bookings.sms import send_sms_confirmation
+
+    client_fixture.phone = "+48123456789"
+    client_fixture.save()
+
+    _, room = double
+    booking = create_booking(
+        room=room,
+        client=client_fixture,
+        check_in=_dt.date(2026, 11, 1),
+        check_out=_dt.date(2026, 11, 3),
+    )
+
+    with mock.patch("hotel_ai.bookings.sms._get_twilio_client") as mock_client:
+        mock_client.return_value = None  # simulates missing credentials
+        result = send_sms_confirmation(booking)
+        assert result is False
