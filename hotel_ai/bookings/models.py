@@ -484,3 +484,57 @@ class PromoCode(models.Model):
         else:  # fixed
             discount = self.discount_value
         return max(total_price - discount, Decimal("0.00"))
+
+
+class WaitlistEntry(models.Model):
+    """A guest's request for a room type they couldn't book."""
+
+    class Status(models.TextChoices):
+        WAITING = "waiting", "Waiting"
+        NOTIFIED = "notified", "Notified"
+        BOOKED = "booked", "Booked via waitlist"
+        CANCELLED = "cancelled", "Cancelled"
+
+    client = models.ForeignKey(
+        Client, on_delete=models.CASCADE, related_name="waitlist_entries"
+    )
+    room_type = models.ForeignKey(
+        RoomType, on_delete=models.CASCADE, related_name="waitlist_entries"
+    )
+    check_in = models.DateField()
+    check_out = models.DateField()
+    guests = models.PositiveIntegerField(default=1)
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.WAITING
+    )
+    notes = models.TextField(blank=True, default="")
+    notified_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "waitlist entry"
+        verbose_name_plural = "waitlist entries"
+
+    def __str__(self) -> str:
+        return f"{self.client} ← {self.room_type.name} [{self.get_status_display()}]"
+
+    def clean(self) -> None:
+        if self.check_out <= self.check_in:
+            raise ValidationError("check_out must be after check_in.")
+
+    def notify(self) -> None:
+        """Mark as notified and create an in-app notification for the client."""
+        self.status = WaitlistEntry.Status.NOTIFIED
+        self.notified_at = timezone.now()
+        self.save(update_fields=["status", "notified_at", "updated_at"])
+        Notification.objects.create(
+            type=Notification.Type.REMINDER,
+            recipient=self.client,
+            message=(
+                f"A {self.room_type.name} is now available for "
+                f"{self.check_in:%Y-%m-%d} → {self.check_out:%Y-%m-%d}. "
+                f"Please contact the front desk to complete your booking."
+            ),
+        )

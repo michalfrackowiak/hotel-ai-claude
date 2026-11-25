@@ -36,6 +36,10 @@ from .views import (
     RoomBulkUpdateView,
     PromoCodeApplyView,
     PromoCodeCheckView,
+    WaitlistEntryCreateView,
+    WaitlistEntryListView,
+    WaitlistEntryDetailView,
+    WaitlistCheckView,
 )
 
 app_name = "bookings"
@@ -74,4 +78,8 @@ urlpatterns = [
     path("group-bookings/", GroupBookingListView.as_view(), name="group-bookings-list"),
     path("group-bookings/create/", GroupBookingCreateView.as_view(), name="group-bookings-create"),
     path("group-bookings/<int:pk>/", GroupBookingDetailView.as_view(), name="group-booking-detail"),
+    path("waitlist/", WaitlistEntryCreateView.as_view(), name="waitlist-create"),
+    path("waitlist/list/", WaitlistEntryListView.as_view(), name="waitlist-list"),
+    path("waitlist/<int:pk>/", WaitlistEntryDetailView.as_view(), name="waitlist-detail"),
+    path("waitlist/check/", WaitlistCheckView.as_view(), name="waitlist-check"),
 ]

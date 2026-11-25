@@ -12,7 +12,7 @@ from typing import Iterable, Optional
 
 import logging
 
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -30,6 +30,7 @@ from .models import (
     RatePlan,
     Room,
     RoomType,
+    WaitlistEntry,
 )
 
 
@@ -628,6 +629,98 @@ def get_group_bookings(client: Client) -> list:
     """Return all group bookings for a client."""
     return list(client.group_bookings.all())
 
+
+def add_waitlist_entry(
+    *,
+    client: Client,
+    room_type_id: int,
+    check_in: _dt.date,
+    check_out: _dt.date,
+    guests: int = 1,
+    notes: str = "",
+) -> WaitlistEntry:
+    """Add a guest to the waitlist for a room type on given dates."""
+    if check_out <= check_in:
+        raise ValueError("check_out must be after check_in.")
+    try:
+        room_type = RoomType.objects.get(pk=room_type_id)
+    except RoomType.DoesNotExist:
+        raise ValueError(f"Room type {room_type_id} not found.")
+    return WaitlistEntry.objects.create(
+        client=client,
+        room_type=room_type,
+        check_in=check_in,
+        check_out=check_out,
+        guests=guests,
+        notes=notes,
+    )
+
+
+def cancel_waitlist_entry(entry: WaitlistEntry) -> WaitlistEntry:
+    """Cancel a waitlist entry (mark as cancelled)."""
+    if entry.status == WaitlistEntry.Status.CANCELLED:
+        return entry
+    entry.status = WaitlistEntry.Status.CANCELLED
+    entry.save(update_fields=["status", "updated_at"])
+    return entry
+
+
+def mark_waitlist_as_booked(entry: WaitlistEntry) -> WaitlistEntry:
+    """Mark a waitlist entry as converted into a booking."""
+    if entry.status != WaitlistEntry.Status.NOTIFIED:
+        raise ValueError("Can only mark a notified entry as booked.")
+    entry.status = WaitlistEntry.Status.BOOKED
+    entry.save(update_fields=["status", "updated_at"])
+    Notification.objects.create(
+        type=Notification.Type.CONFIRMED,
+        recipient=entry.client,
+        message=(
+            f"Your waitlist request for a {entry.room_type.name} room "
+            f"({entry.check_in:%Y-%m-%d} → {entry.check_out:%Y-%m-%d}) "
+            f"has been converted into a confirmed booking!"
+        ),
+    )
+    return entry
+
+
+def find_available_rooms_for_dates(
+    room_type: RoomType,
+    check_in: _dt.date,
+    check_out: _dt.date,
+) -> list:
+    """Find rooms of a given type available for the specified date range."""
+    occupied = set(
+        Booking.objects.filter(
+            room__room_type=room_type,
+            status__in=(BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN),
+        ).exclude(
+            models.Q(check_out__lte=check_in) | models.Q(check_in__gte=check_out)
+        )
+        .values_list("room_id", flat=True)
+    )
+    return list(
+        Room.objects.filter(
+            room_type=room_type,
+            is_active=True,
+        ).exclude(id__in=occupied)
+    )
+
+
+def check_and_notify_waitlist() -> list:
+    """Check waiting entries against current availability and notify when rooms are free."""
+    notifications_sent = []
+    for entry in WaitlistEntry.objects.filter(status__in=("waiting", "notified")):
+        if entry.check_out <= entry.check_in:
+            continue
+        available = find_available_rooms_for_dates(
+            entry.room_type, entry.check_in, entry.check_out
+        )
+        if available:
+            entry.notify()
+            notifications_sent.append(entry.pk)
+    return notifications_sent
+
+
 __all__ = [
     "resolve_client",
     "resolve_pricing_rule",
@@ -650,4 +743,9 @@ __all__ = [
     "estimate_cancellation_refund",
     "create_group_booking",
     "get_group_bookings",
+    "add_waitlist_entry",
+    "cancel_waitlist_entry",
+    "mark_waitlist_as_booked",
+    "find_available_rooms_for_dates",
+    "check_and_notify_waitlist",
 ]

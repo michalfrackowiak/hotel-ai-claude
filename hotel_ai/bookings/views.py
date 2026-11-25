@@ -41,10 +41,14 @@ from hotel_ai.bookings.services import (
     resolve_client,
     validate_promo_code,
     apply_promo_code,
+    add_waitlist_entry,
+    cancel_waitlist_entry,
+    mark_waitlist_as_booked,
+    check_and_notify_waitlist,
 )
 from hotel_ai.bookings.invoices import generate_invoice_pdf
 
-from .models import Booking, BookingLog, BookingStatus, Client, GroupBooking, LoyaltyPoint, Notification, PromoCode, RatePlan, Room, RoomType
+from .models import Booking, BookingLog, BookingStatus, Client, GroupBooking, LoyaltyPoint, Notification, PromoCode, RatePlan, Room, RoomType, WaitlistEntry
 from .serializers import (
     AvailabilityRequestSerializer,
     AvailabilityResponseSerializer,
@@ -66,6 +70,8 @@ from .serializers import (
     LoyaltyPointSerializer,
     GroupBookingSerializer,
     GroupBookingCreateSerializer,
+    WaitlistEntrySerializer,
+    WaitlistEntryCreateSerializer,
 )
 
 
@@ -1106,3 +1112,97 @@ class GroupBookingListView(APIView):
 
         groups = get_group_bookings(client)
         return JsonResponse([GroupBookingSerializer(g).data for g in groups], safe=False)
+
+
+class WaitlistEntryCreateView(APIView):
+    """POST /api/waitlist/ — add a guest to the waitlist."""
+
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = WaitlistEntryCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return JsonResponse(serializer.errors, status=400)
+
+        data = serializer.validated_data
+        client_id = request.data.get("client_id")
+        if not client_id:
+            return JsonResponse({"detail": "client_id parameter required"}, status=400)
+        try:
+            client = Client.objects.get(pk=client_id)
+        except (Client.DoesNotExist, ValueError):
+            return JsonResponse({"detail": "Client not found"}, status=404)
+
+        try:
+            entry = add_waitlist_entry(
+                client=client,
+                room_type_id=data["room_type_id"],
+                check_in=data["check_in"],
+                check_out=data["check_out"],
+                guests=data.get("guests", 1),
+                notes=data.get("notes", ""),
+            )
+        except ValueError as exc:
+            return JsonResponse({"detail": str(exc)}, status=400)
+
+        return JsonResponse(WaitlistEntrySerializer(entry).data, status=201)
+
+
+class WaitlistEntryListView(APIView):
+    """GET /api/waitlist/?client=<id> — list waitlist entries for a client."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        client_id = request.GET.get("client")
+        if not client_id:
+            return JsonResponse({"detail": "client parameter required"}, status=400)
+        try:
+            client = Client.objects.get(pk=client_id)
+        except (Client.DoesNotExist, ValueError):
+            return JsonResponse({"detail": "Client not found"}, status=404)
+
+        entries = client.waitlist_entries.all()
+        return JsonResponse([WaitlistEntrySerializer(e).data for e in entries], safe=False)
+
+
+class WaitlistEntryDetailView(APIView):
+    """GET /api/waitlist/<pk>/ — get a waitlist entry detail."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request, pk):
+        try:
+            entry = WaitlistEntry.objects.select_related("client", "room_type").get(pk=pk)
+        except WaitlistEntry.DoesNotExist:
+            return JsonResponse({"detail": "Waitlist entry not found"}, status=404)
+        return JsonResponse(WaitlistEntrySerializer(entry).data)
+
+    def post(self, request, pk):
+        """Cancel or mark as booked a waitlist entry."""
+        try:
+            entry = WaitlistEntry.objects.get(pk=pk)
+        except WaitlistEntry.DoesNotExist:
+            return JsonResponse({"detail": "Waitlist entry not found"}, status=404)
+
+        action = request.data.get("action")
+        if action == "cancel":
+            cancel_waitlist_entry(entry)
+            return JsonResponse({"message": "Waitlist entry cancelled."})
+        elif action == "book":
+            try:
+                mark_waitlist_as_booked(entry)
+                return JsonResponse({"message": "Waitlist entry marked as booked."})
+            except ValueError as exc:
+                return JsonResponse({"detail": str(exc)}, status=400)
+        return JsonResponse({"detail": "Invalid action. Use 'cancel' or 'book'."}, status=400)
+
+
+class WaitlistCheckView(APIView):
+    """POST /api/waitlist/check/ — trigger waitlist availability check."""
+
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        notified_ids = check_and_notify_waitlist()
+        return JsonResponse({"notified_count": len(notified_ids), "entries": notified_ids})

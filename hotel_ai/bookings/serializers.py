@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from .models import Booking, BookingLog, BookingStatus, Client, GroupBooking, LoyaltyPoint, Notification, PricingRule, Room, RoomType, PromoCode, RatePlan
+from .models import Booking, BookingLog, BookingStatus, Client, GroupBooking, LoyaltyPoint, Notification, PricingRule, Room, RoomType, PromoCode, RatePlan, WaitlistEntry
 from .services import (
     calculate_total,
     effective_price,
@@ -326,6 +326,43 @@ class GroupBookingCreateSerializer(serializers.Serializer):
         return attrs
 
 
+class WaitlistEntrySerializer(serializers.ModelSerializer):
+    room_type_name = serializers.CharField(source="room_type.name", read_only=True)
+    client_name = serializers.CharField(source="client.full_name", read_only=True)
+
+    class Meta:
+        model = WaitlistEntry
+        fields = (
+            "id",
+            "client",
+            "client_name",
+            "room_type",
+            "room_type_name",
+            "check_in",
+            "check_out",
+            "guests",
+            "status",
+            "notes",
+            "notified_at",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "notified_at", "created_at", "updated_at")
+
+
+class WaitlistEntryCreateSerializer(serializers.Serializer):
+    room_type_id = serializers.IntegerField()
+    check_in = serializers.DateField()
+    check_out = serializers.DateField()
+    guests = serializers.IntegerField(min_value=1, default=1)
+    notes = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        if attrs["check_out"] <= attrs["check_in"]:
+            raise serializers.ValidationError("check_out must be after check_in.")
+        return attrs
+
+
 __all__ = [
     "RoomTypeSerializer",
     "RoomSerializer",
@@ -348,4 +385,6 @@ __all__ = [
     "LoyaltyPointSerializer",
     "GroupBookingSerializer",
     "GroupBookingCreateSerializer",
+    "WaitlistEntrySerializer",
+    "WaitlistEntryCreateSerializer",
 ]
