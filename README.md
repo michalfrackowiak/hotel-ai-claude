@@ -1,137 +1,113 @@
-# Hotel-AI-Claude
+# Hotel AI
 
-Alpha version of an AI-powered hotel reception system with voice and chat reservations in English and Polish.
+Hotel AI is an alpha hotel-reception and operations application built with Django. Guests can interact with a reservation agent by text or browser voice, while staff manage rooms and reservations through an operations dashboard and REST API. The application supports English and Polish.
 
-## Features
+## Capabilities
 
-- **Voice Calls**: Browser-based voice interface using WebRTC and MediaRecorder API
-- **Text Chat**: Multi-turn conversational reservation flow
-- **Bilingual Support**: English and Polish via language parameter (`?lang=en|pl`)
-- **Room Management**: Single, Double, and Suite rooms with dynamic pricing
-- **Booking Engine**: Availability checking, booking creation, cancellation, check-in/out, and no-show marking
-- **Management Dashboard**: Visual room grid with real-time status tiles (available / confirmed / checked-in / no-show)
-- **AI Agents**: Tool-loop agent pattern for structured JSON responses
-- **Calendar Sync**: Best-effort Google Calendar integration (optional)
-- **Guest Accounts**: Username/password login, Google SSO, and a guest portal to view and link bookings
-- **Docker Deployment**: Single-container setup with gunicorn
+- **Reservations and inventory:** Room types and rooms, availability checks, date-based pricing rules, rate plans, promo codes, cancellation policies, and booking lifecycle actions (confirm, modify, cancel, check in, check out, and no-show).
+- **Front-desk tools:** Occupancy and room-grid dashboard, arrivals and departures, booking activity, group bookings, waitlist, and room administration.
+- **Guest accounts:** Registration and login, optional Google sign-in, a guest profile and booking portal, booking linking, notifications, and loyalty balances.
+- **AI receptionist:** A configurable tool-using agent for reservation conversations, backed by OpenAI, Anthropic, or Ollama providers. Provider and agent settings are stored in Django and can be configured per language.
+- **Voice and chat:** Browser interfaces for voice and text conversations, with configurable speech providers and streamed voice responses.
+- **Optional integrations:** Best-effort Google Calendar synchronization and OpenLine voice/webhook integration. Credentials and external services are configured separately.
 
-## Tech Stack
+## Technology
 
-- **Backend**: Python 3.15, Django 4.2.16, Django REST Framework
-- **LLM**: Ollama (qwen2.5:3b) via OpenAI-compatible API
-- **STT/TTS**: Whisper via Ollama / native model fallback
-- **Testing**: pytest-django, pytest-cov
-- **Deployment**: Docker + gunicorn
+- Python 3.11 (the version used by the Docker image), Django 4.2, and Django REST Framework
+- SQLite by default; the Docker Compose configuration also defines PostgreSQL and Redis services
+- OpenAI, Anthropic, and Ollama provider clients
+- django-allauth for guest accounts and Google sign-in
+- pytest and pytest-django for tests
+- Docker, Gunicorn, and WhiteNoise for containerized serving
 
-## Quick Start (Local Development)
+## Local development
 
-### Prerequisites
+Use Python 3.11 or a compatible version supported by the dependencies. For the default local setup, Django uses SQLite when `DATABASE_URL` is unset.
 
-1. Install [Ollama](https://ollama.ai) and pull models:
-   ```bash
-   ollama pull qwen2.5:3b
-   ollama pull whisper
-   ```
+1. Create and activate a virtual environment, then install dependencies:
 
-2. Activate virtual environment and install dependencies:
-   ```bash
+   ```powershell
    python -m venv .venv
-   .venv/Scripts/Activate.ps1  # PowerShell
+   .venv\Scripts\Activate.ps1
    pip install -r requirements.txt
+   Copy-Item .env.example .env
    ```
 
-3. Run migrations and seed data:
-   ```bash
+   On macOS or Linux, activate with `source .venv/bin/activate` and copy the sample environment with `cp .env.example .env`.
+
+2. Configure an AI provider. The `seed_providers` command sets up Ollama with `qwen2.5:3b` for English and Polish agent settings. For this option, install and start Ollama, then pull the model:
+
+   ```sh
+   ollama pull qwen2.5:3b
+   ```
+
+   Alternatively, configure an active `AIProvider` and `AgentSettings` in Django for OpenAI or Anthropic, supplying credentials through environment variables. Do not commit real credentials to the repository.
+
+3. Apply migrations and initialize the AI provider settings:
+
+   ```sh
    python manage.py migrate
    python manage.py seed_providers
+   ```
+
+4. Optionally add sample rooms, pricing, rate plans, promo codes, and a demo booking, then start the server:
+
+   ```sh
    python manage.py seed_data
+   python manage.py runserver
    ```
 
-4. Start the dev server:
-   ```bash
-   python manage.py runserver 0.0.0.0:8000
-   ```
+   **Note:** `seed_data` is intended for a fresh development database. Running it again deletes and recreates room inventory and bookings.
 
-5. Visit http://localhost:8000/ in your browser.
+5. Open [http://localhost:8000/](http://localhost:8000/). The staff dashboard is at `/dashboard/`; browser chat and voice are at `/chat/` and `/voice/`.
 
-## Endpoints
+Set `DATABASE_URL` to use a database other than the local SQLite default. See `.env.example` and `hotel_ai/settings.py` for the supported environment configuration. Google Calendar, Google sign-in, and OpenLine features require their respective external credentials and setup.
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | GET | Homepage with language switcher |
-| `/dashboard/?lang=en|pl&date=YYYY-MM-DD` | GET | Management dashboard with room grid |
-| `/chat/?lang=en|pl` | GET | Chat UI |
-| `/chat/turn/` | POST | Chat message turn |
-| `/voice/?lang=en|pl` | GET | Voice call UI |
-| `/voice/turn/` | POST | Voice audio processing |
-| `/api/room-types/` | GET | List room types |
-| `/api/rooms/` | GET | List rooms |
-| `/api/bookings/create/` | POST | Create booking |
-| `/api/bookings/` | GET | List bookings |
-| `/api/bookings/<id>/` | GET | Booking detail |
-| `/api/bookings/<id>/cancel/` | POST | Cancel booking |
-| `/api/bookings/<id>/check-in/` | POST | Check in guest |
-| `/api/bookings/<id>/check-out/` | POST | Check out guest |
-| `/api/bookings/<id>/no-show/` | POST | Mark no-show |
-| `/api/availability/stream/` | SSE | Real-time availability events |
-| `/api/admin/` | GET | Admin booking list |
-| `/api/feed/` | GET | iCal calendar export |
-| `/login/` | GET/POST | Guest login (django-allauth) |
-| `/signup/` | GET/POST | Guest registration |
-| `/logout/` | GET/POST | Guest logout |
-| `/google/login/` | GET | Google SSO entry point |
-| `/accounts/profile/` | GET | Guest portal: bookings + account |
-| `/accounts/profile/update/` | POST | Update phone and language |
-| `/accounts/bookings/<id>/link/` | POST | Claim an existing booking |
-| `/admin/` | GET | Django admin panel |
-| `/accounts/password/change/?lang=en|pl` | GET/POST | Guest password change (keeps session, redirects to profile) |
-| `/integrations/openline/` | — | OpenLine voice webhook integration |
-| `/accounts/debug-logs/` | GET | Staff-only debug view of recent application logs |
+## Docker Compose
 
-## Docker Deployment
+The development Compose file defines web, PostgreSQL, and Redis services. Copy `.env.example` to `.env`, configure the environment for your setup, and run:
 
-```bash
-docker build -t hotel-ai-alpha .
-docker run -p 8888:8000 --add-host=host.docker.internal:host-gateway hotel-ai-alpha
+```sh
+docker compose up --build
 ```
 
-After container startup, seed providers:
-```bash
-docker exec -it <container_id> python manage.py seed_providers
+The web container applies migrations, collects static files, and seeds the AI provider configuration on startup. The application is exposed at [http://localhost:8888/](http://localhost:8888/). The sample `.env.example` does not set `DATABASE_URL`, so Django uses SQLite unless you configure `DATABASE_URL` and provide a PostgreSQL driver for the Compose database. To load sample hotel data into the running application, use `docker compose exec web python manage.py seed_data`; the reset warning above also applies. `docker-compose.prod.yml` contains a separate production-oriented configuration with Nginx and Certbot services.
+
+## Tests
+
+Run the test suite from the repository root:
+
+```sh
+python -m pytest
 ```
 
-## Testing
+## Project layout
 
-```bash
-python -m pytest hotel_ai/ -v
-```
-
-## Architecture
-
-```
+```text
 hotel_ai/
-├── ai_providers/     # LLM provider abstraction, agent loop
-│   ├── factory.py    # Provider selection by language
-│   ├── agent.py      # ReservationAgent with tool loop
-│   ├── openai.py     # OpenAI chat completion client
-│   ├── anthropic.py  # Anthropic Claude client
-│   ├── ollama.py     # Ollama OpenAI-compatible client
-│   └── base.py       # Abstract base class
-├── bookings/         # Room, booking, pricing models & API
-├── calendar_integration/  # Google Calendar sync
-├── chat/             # Text chat views and templates
-├── voice/            # Voice call UI and processing
-└── settings.py       # Django project settings
+├── accounts/              Guest profiles, account portal, and booking linking
+├── ai_providers/          Provider configuration and reservation agent
+├── bookings/              Inventory, pricing, reservations, and REST API
+├── calendar_integration/  Google Calendar synchronization
+├── chat/                  Text conversation interface
+├── voice/                 Voice conversation and OpenLine handling
+├── settings.py            Django settings
+└── urls.py                Root routes and health endpoint
+templates/                 Dashboard, guest, chat, and voice pages
+django-openline/           OpenLine integration package
 ```
 
-## Language Configuration
+## Main routes
 
-The agent uses different system prompts based on the `language` parameter:
-- `en`: Professional American English receptionist
-- `pl`: Natural, warm Polish receptionist
-
-Both enforce strict JSON action format for programmatic responses while maintaining natural conversation flow.
+- `/` — landing page
+- `/dashboard/` — staff dashboard
+- `/chat/` and `/voice/` — guest conversation interfaces
+- `/api/` — booking, inventory, pricing, and guest-related REST endpoints
+- `/health/` — application health response
+- `/admin/` — Django administration
+- `/accounts/profile/` — guest account portal
+- `/integrations/openline/` — OpenLine integration endpoint
 
 ## License
 
-Internal prototype — not licensed.
+Internal prototype; no license has been assigned.
